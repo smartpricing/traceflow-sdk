@@ -63,17 +63,24 @@ jobs:
           git fetch --unshallow || true
           git fetch origin develop "${RELEASE_BRANCH}"
 
-          # Checkout develop
-          git checkout develop
+          # Check if both branches exist on remote
+          if git ls-remote --exit-code --heads origin develop > /dev/null && \
+             git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" > /dev/null; then
 
-          VERSION=$(echo "${RELEASE_BRANCH}" | sed -E 's/release\/v(.+)/\1/')
-          echo "Merging release branch ${RELEASE_BRANCH} into develop (version ${VERSION})"
+            # Checkout develop
+            git checkout develop
 
-          # Allow unrelated histories just in case
-          git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" || \
-            git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" --allow-unrelated-histories
+            VERSION=$(echo "${RELEASE_BRANCH}" | sed -E 's/release\/v(.+)/\1/')
+            echo "Merging release branch ${RELEASE_BRANCH} into develop (version ${VERSION})"
 
-          git push origin develop
+            # Allow unrelated histories just in case
+            git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" || \
+              git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" --allow-unrelated-histories
+
+            git push origin develop
+          else
+            echo "Either 'develop' or '${RELEASE_BRANCH}' branch does not exist. Skipping merge."
+          fi
 
       - name: Delete release branch
         run: |

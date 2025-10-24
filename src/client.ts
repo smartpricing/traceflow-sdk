@@ -24,6 +24,8 @@ function isKafkaConfig(config: TraceFlowConfig): config is TraceFlowKafkaConfig 
  * TraceFlowClient - Main SDK client for sending job tracking messages
  */
 export class TraceFlowClient {
+  private static instance?: TraceFlowClient;
+  
   private kafka?: KafkaJS.Kafka;
   private producer: KafkaJS.Producer;
   private topic: string;
@@ -64,6 +66,43 @@ export class TraceFlowClient {
         throw new Error('KafkaInstanceConfig must provide either kafka or producer instance');
       }
     }
+  }
+
+  /**
+   * Initialize the singleton instance
+   * This is the recommended way to use the SDK
+   */
+  static initialize(config: TraceFlowConfig, defaultSource?: string): TraceFlowClient {
+    if (TraceFlowClient.instance) {
+      throw new Error('TraceFlowClient already initialized. Use getInstance() to get the existing instance.');
+    }
+    TraceFlowClient.instance = new TraceFlowClient(config, defaultSource);
+    return TraceFlowClient.instance;
+  }
+
+  /**
+   * Get the singleton instance
+   * Must call initialize() first
+   */
+  static getInstance(): TraceFlowClient {
+    if (!TraceFlowClient.instance) {
+      throw new Error('TraceFlowClient not initialized. Call initialize() first.');
+    }
+    return TraceFlowClient.instance;
+  }
+
+  /**
+   * Check if the singleton instance exists
+   */
+  static hasInstance(): boolean {
+    return !!TraceFlowClient.instance;
+  }
+
+  /**
+   * Reset the singleton instance (useful for testing)
+   */
+  static reset(): void {
+    TraceFlowClient.instance = undefined;
   }
 
   /**

@@ -1,0 +1,82 @@
+# .github/workflows/beta.yml
+name: Release Deploy
+
+on:
+  push:
+    branches:
+      - "release/**" # es. release/v1.2.3
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      REPOSITORY_NAME: cb-airbnb-wrapper
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.CB_GITHUB_CI_SUBMODULES_TOKEN }}
+          persist-credentials: true
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Configure NPM for private packages
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
+      - name: Install & Build
+        run: |
+          npm install --force
+          npm run build
+
+      - name: Conditional version bump & changelog
+        run: |
+          git config --global user.email "ci@github.com"
+          git config --global user.name "GitHub Actions Bot"
+
+          if git log -1 --pretty=%B | grep -q "chore(release)"; then
+            echo "Version bump commit found, skipping release to avoid loop."
+          else
+            echo "Running release step..."
+            npm run release -- --releaseCommitMessageFormat "chore(release): bump version to %s [skip ci]"
+
+            git push --set-upstream origin HEAD || true
+            git push --follow-tags
+          fi
+
+      - name: Publish to NPM
+        run: npm publish
+
+      - name: Merge release branch into develop
+        run: |
+          git config --global user.email "ci@github.com"
+          git config --global user.name "GitHub Actions Bot"
+
+          RELEASE_BRANCH="${GITHUB_REF#refs/heads/}"
+
+          # Fetch complete history for both develop and the release branch
+          git fetch --unshallow || true
+          git fetch origin develop "${RELEASE_BRANCH}"
+
+          # Checkout develop
+          git checkout develop
+
+          VERSION=$(echo "${RELEASE_BRANCH}" | sed -E 's/release\/v(.+)/\1/')
+          echo "Merging release branch ${RELEASE_BRANCH} into develop (version ${VERSION})"
+
+          # Allow unrelated histories just in case
+          git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" || \
+            git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" --allow-unrelated-histories
+
+          git push origin develop
+
+      - name: Delete release branch
+        run: |
+          RELEASE_BRANCH="${GITHUB_REF#refs/heads/}"
+          echo "Deleting remote release branch: ${RELEASE_BRANCH}"
+          git push origin --delete "${RELEASE_BRANCH}" || true

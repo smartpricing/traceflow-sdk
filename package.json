@@ -1,0 +1,45 @@
+{
+  "name": "traceflow-sdk",
+  "version": "1.0.0",
+  "description": "SDK for sending job tracking messages to Kafka with automatic step management",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com-sp:smartpricing/traceflow-sdk.git"
+  },
+  "keywords": [
+    "kafka",
+    "job-tracking",
+    "tracing",
+    "monitoring",
+    "jobs",
+    "steps",
+    "logs"
+  ],
+  "author": "Andrei Borcea",
+  "license": "ISC",
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^9.0.7",
+    "tsup": "^8.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

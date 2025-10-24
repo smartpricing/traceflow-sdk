@@ -1,0 +1,34 @@
+# Source files
+src/
+
+# Development files
+examples/
+tsconfig.json
+tsconfig.build.json
+tsup.config.ts
+vitest.config.ts
+
+# Documentation
+*.md
+!README.md
+
+# IDE
+.vscode/
+.idea/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+.eslintrc*
+.prettierrc*
+*.tsbuildinfo
+

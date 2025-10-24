@@ -6,24 +6,24 @@
 export { TraceFlowClient } from './client';
 export { JobManager } from './job-manager';
 export {
-  JobStatus,
-  StepStatus,
-  LogLevel,
-  EventType,
+  TraceFlowJobStatus,
+  TraceFlowStepStatus,
+  TraceFlowLogLevel,
+  TraceFlowEventType,
 } from './types';
 
 export type {
-  KafkaConfig,
-  KafkaInstanceConfig,
+  TraceFlowKafkaConfig,
+  TraceFlowKafkaInstanceConfig,
   TraceFlowConfig,
   CreateJobOptions,
   UpdateJobOptions,
   CreateStepOptions,
   UpdateStepOptions,
   CreateLogOptions,
-  KafkaJobMessage,
-  KafkaStepMessage,
-  KafkaLogMessage,
-  KafkaMessage,
+  TraceFlowKafkaJobMessage,
+  TraceFlowKafkaStepMessage,
+  TraceFlowKafkaLogMessage,
+  TraceFlowKafkaMessage,
 } from './types';
 

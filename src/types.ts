@@ -6,7 +6,7 @@
 /**
  * Job status enum
  */
-export enum JobStatus {
+export enum TraceFlowJobStatus {
   PENDING = 'pending',
   RUNNING = 'running',
   SUCCESS = 'success',
@@ -17,7 +17,7 @@ export enum JobStatus {
 /**
  * Step status enum
  */
-export enum StepStatus {
+export enum TraceFlowStepStatus {
   STARTED = 'started',
   IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
@@ -27,7 +27,7 @@ export enum StepStatus {
 /**
  * Log level enum
  */
-export enum LogLevel {
+export enum TraceFlowLogLevel {
   DEBUG = 'DEBUG',
   INFO = 'INFO',
   WARN = 'WARN',
@@ -37,7 +37,7 @@ export enum LogLevel {
 /**
  * Event type enum
  */
-export enum EventType {
+export enum TraceFlowEventType {
   STATE_CHANGE = 'state_change',
   OUTPUT = 'output',
   MESSAGE = 'message',
@@ -47,7 +47,7 @@ export enum EventType {
 /**
  * Kafka configuration
  */
-export interface KafkaConfig {
+export interface TraceFlowKafkaConfig {
   brokers: string[];
   topic: string;
   clientId?: string;
@@ -62,23 +62,23 @@ export interface KafkaConfig {
 /**
  * Kafka instance configuration - use existing Kafka or Producer instance
  */
-export interface KafkaInstanceConfig {
+export interface TraceFlowKafkaInstanceConfig {
   topic: string;
-  kafka?: any; // Kafka instance from kafkajs
-  producer?: any; // Producer instance from kafkajs
+  kafka?: any; // Kafka instance from @confluentinc/kafka-javascript
+  producer?: any; // Producer instance from @confluentinc/kafka-javascript
 }
 
 /**
  * Combined configuration type - either config or instance
  */
-export type TraceFlowConfig = KafkaConfig | KafkaInstanceConfig;
+export type TraceFlowConfig = TraceFlowKafkaConfig | TraceFlowKafkaInstanceConfig;
 
 /**
  * Job creation options
  */
 export interface CreateJobOptions {
   job_type?: string;
-  status?: JobStatus | string;
+  status?: TraceFlowJobStatus | string;
   source?: string;
   title?: string;
   description?: string;
@@ -93,7 +93,7 @@ export interface CreateJobOptions {
  */
 export interface UpdateJobOptions {
   job_type?: string;
-  status?: JobStatus | string;
+  status?: TraceFlowJobStatus | string;
   source?: string;
   title?: string;
   description?: string;
@@ -115,7 +115,7 @@ export interface CreateStepOptions {
   step_id?: string;
   step_type?: string;
   name?: string;
-  status?: StepStatus | string;
+  status?: TraceFlowStepStatus | string;
   input?: any;
   metadata?: Record<string, string>;
 }
@@ -127,7 +127,7 @@ export interface UpdateStepOptions {
   step_id?: string;
   step_type?: string;
   name?: string;
-  status?: StepStatus | string;
+  status?: TraceFlowStepStatus | string;
   output?: any;
   error?: string;
   finished_at?: Date | string;
@@ -139,8 +139,8 @@ export interface UpdateStepOptions {
  */
 export interface CreateLogOptions {
   step_number?: number;
-  level?: LogLevel | string;
-  event_type?: EventType | string;
+  level?: TraceFlowLogLevel | string;
+  event_type?: TraceFlowEventType | string;
   message?: string;
   details?: any;
   source?: string;
@@ -149,7 +149,7 @@ export interface CreateLogOptions {
 /**
  * Internal Kafka message payload for jobs
  */
-export interface KafkaJobMessage {
+export interface TraceFlowKafkaJobMessage {
   job_id: string;
   job_type?: string;
   status?: string;
@@ -171,7 +171,7 @@ export interface KafkaJobMessage {
 /**
  * Internal Kafka message payload for steps
  */
-export interface KafkaStepMessage {
+export interface TraceFlowKafkaStepMessage {
   job_id: string;
   step_number: number;
   step_id?: string;
@@ -190,7 +190,7 @@ export interface KafkaStepMessage {
 /**
  * Internal Kafka message payload for logs
  */
-export interface KafkaLogMessage {
+export interface TraceFlowKafkaLogMessage {
   job_id: string;
   log_time?: string;
   log_id?: string;
@@ -205,8 +205,8 @@ export interface KafkaLogMessage {
 /**
  * Combined Kafka message
  */
-export interface KafkaMessage {
+export interface TraceFlowKafkaMessage {
   type: 'job' | 'step' | 'log';
-  data: KafkaJobMessage | KafkaStepMessage | KafkaLogMessage;
+  data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage;
 }
 

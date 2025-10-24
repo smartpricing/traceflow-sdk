@@ -3,8 +3,10 @@
  * Useful when you already have a Kafka connection in your application
  */
 
-import { Kafka } from 'kafkajs';
-import { TraceFlowClient, JobStatus } from '../src';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
+import { TraceFlowClient, TraceFlowJobStatus } from '../src';
+
+const { Kafka } = KafkaJS;
 
 async function exampleWithExistingKafka() {
   // Your existing Kafka instance (e.g., used by other parts of your app)

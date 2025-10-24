@@ -1,13 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
-  JobStatus,
-  StepStatus,
+  TraceFlowJobStatus,
+  TraceFlowStepStatus,
   CreateStepOptions,
   UpdateStepOptions,
   CreateLogOptions,
-  KafkaJobMessage,
-  KafkaStepMessage,
-  KafkaLogMessage,
+  TraceFlowKafkaJobMessage,
+  TraceFlowKafkaStepMessage,
+  TraceFlowKafkaLogMessage,
   UpdateJobOptions,
 } from './types';
 
@@ -21,7 +21,7 @@ export class JobManager {
   private currentStepNumber: number = -1;
   private sendMessage: (
     type: 'job' | 'step' | 'log',
-    data: KafkaJobMessage | KafkaStepMessage | KafkaLogMessage
+    data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ) => Promise<void>;
 
   constructor(
@@ -29,7 +29,7 @@ export class JobManager {
     source: string | undefined,
     sendMessage: (
       type: 'job' | 'step' | 'log',
-      data: KafkaJobMessage | KafkaStepMessage | KafkaLogMessage
+      data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
     ) => Promise<void>
   ) {
     this.jobId = jobId;
@@ -50,15 +50,14 @@ export class JobManager {
   async updateJob(options: UpdateJobOptions): Promise<void> {
     const now = new Date().toISOString();
 
-    const data: KafkaJobMessage = {
+    const data: TraceFlowKafkaJobMessage = {
       job_id: this.jobId,
       updated_at: now,
       ...options,
       // Convert Date to string if needed
-      started_at: options.started_at instanceof Date ? options.started_at.toISOString() : options.started_at,
-      finished_at: options.finished_at instanceof Date ? options.finished_at.toISOString() : options.finished_at,
+      started_at: options.started_at ? (options.started_at instanceof Date ? options.started_at.toISOString() : options.started_at) : undefined, 
+      finished_at: options.finished_at ? (options.finished_at instanceof Date ? options.finished_at.toISOString() : options.finished_at) : undefined,
     };
-
     await this.sendMessage('job', data);
   }
 
@@ -68,9 +67,9 @@ export class JobManager {
   async completeJob(result?: any): Promise<void> {
     const now = new Date().toISOString();
 
-    const data: KafkaJobMessage = {
+    const data: TraceFlowKafkaJobMessage = {
       job_id: this.jobId,
-      status: JobStatus.SUCCESS,
+      status: TraceFlowJobStatus.SUCCESS,
       updated_at: now,
       finished_at: now,
       ...(result !== undefined && { result }),
@@ -85,9 +84,9 @@ export class JobManager {
   async failJob(error: string): Promise<void> {
     const now = new Date().toISOString();
 
-    const data: KafkaJobMessage = {
+    const data: TraceFlowKafkaJobMessage = {
       job_id: this.jobId,
-      status: JobStatus.FAILED,
+      status: TraceFlowJobStatus.FAILED,
       updated_at: now,
       finished_at: now,
       error,
@@ -102,9 +101,9 @@ export class JobManager {
   async cancelJob(): Promise<void> {
     const now = new Date().toISOString();
 
-    const data: KafkaJobMessage = {
+    const data: TraceFlowKafkaJobMessage = {
       job_id: this.jobId,
-      status: JobStatus.CANCELLED,
+      status: TraceFlowJobStatus.CANCELLED,
       updated_at: now,
       finished_at: now,
     };
@@ -132,13 +131,13 @@ export class JobManager {
       stepNumber = this.currentStepNumber;
     }
 
-    const data: KafkaStepMessage = {
+    const data: TraceFlowKafkaStepMessage = {
       job_id: this.jobId,
       step_number: stepNumber,
       step_id: options.step_id || uuidv4(),
       step_type: options.step_type,
       name: options.name,
-      status: options.status || StepStatus.STARTED,
+      status: options.status || TraceFlowStepStatus.STARTED,
       started_at: now,
       updated_at: now,
       input: options.input,
@@ -155,13 +154,13 @@ export class JobManager {
   async updateStep(stepNumber: number, options: UpdateStepOptions = {}): Promise<void> {
     const now = new Date().toISOString();
 
-    const data: KafkaStepMessage = {
+    const data: TraceFlowKafkaStepMessage = {
       job_id: this.jobId,
       step_number: stepNumber,
       updated_at: now,
       ...options,
       // Convert Date to string if needed
-      finished_at: options.finished_at instanceof Date ? options.finished_at.toISOString() : options.finished_at,
+      finished_at: options.finished_at ? (options.finished_at instanceof Date ? options.finished_at.toISOString() : options.finished_at) : undefined,
     };
 
     await this.sendMessage('step', data);
@@ -173,10 +172,10 @@ export class JobManager {
   async completeStep(stepNumber: number, output?: any): Promise<void> {
     const now = new Date().toISOString();
 
-    const data: KafkaStepMessage = {
+    const data: TraceFlowKafkaStepMessage = {
       job_id: this.jobId,
       step_number: stepNumber,
-      status: StepStatus.COMPLETED,
+      status: TraceFlowStepStatus.COMPLETED,
       finished_at: now,
       updated_at: now,
       ...(output !== undefined && { output }),
@@ -191,10 +190,10 @@ export class JobManager {
   async failStep(stepNumber: number, error: string): Promise<void> {
     const now = new Date().toISOString();
 
-    const data: KafkaStepMessage = {
+    const data: TraceFlowKafkaStepMessage = {
       job_id: this.jobId,
       step_number: stepNumber,
-      status: StepStatus.FAILED,
+      status: TraceFlowStepStatus.FAILED,
       finished_at: now,
       updated_at: now,
       error,
@@ -210,7 +209,7 @@ export class JobManager {
   async log(options: CreateLogOptions): Promise<void> {
     const now = new Date().toISOString();
 
-    const data: KafkaLogMessage = {
+    const data: TraceFlowKafkaLogMessage = {
       job_id: this.jobId,
       log_time: now,
       step_number: options.step_number,

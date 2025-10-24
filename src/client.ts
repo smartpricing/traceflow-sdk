@@ -1,22 +1,22 @@
-import { Kafka, Producer } from 'kafkajs';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { v4 as uuidv4 } from 'uuid';
+
 import {
-  KafkaConfig,
-  KafkaInstanceConfig,
+  TraceFlowKafkaConfig,
   TraceFlowConfig,
   CreateJobOptions,
-  KafkaJobMessage,
-  KafkaStepMessage,
-  KafkaLogMessage,
-  KafkaMessage,
-  JobStatus,
+  TraceFlowKafkaJobMessage,
+  TraceFlowKafkaStepMessage,
+  TraceFlowKafkaLogMessage,
+  TraceFlowKafkaMessage,
+  TraceFlowJobStatus,
 } from './types';
 import { JobManager } from './job-manager';
 
 /**
  * Type guard to check if config is KafkaConfig
  */
-function isKafkaConfig(config: TraceFlowConfig): config is KafkaConfig {
+function isKafkaConfig(config: TraceFlowConfig): config is TraceFlowKafkaConfig {
   return 'brokers' in config;
 }
 
@@ -24,8 +24,8 @@ function isKafkaConfig(config: TraceFlowConfig): config is KafkaConfig {
  * TraceFlowClient - Main SDK client for sending job tracking messages
  */
 export class TraceFlowClient {
-  private kafka?: Kafka;
-  private producer: Producer;
+  private kafka?: KafkaJS.Kafka;
+  private producer: KafkaJS.Producer;
   private topic: string;
   private connected: boolean = false;
   private defaultSource?: string;
@@ -47,7 +47,7 @@ export class TraceFlowClient {
         kafkaConfig.ssl = config.ssl !== undefined ? config.ssl : true;
       }
 
-      this.kafka = new Kafka(kafkaConfig);
+      this.kafka = new KafkaJS.Kafka(kafkaConfig);
       this.producer = this.kafka.producer();
       this.ownsProducer = true;
     } else {
@@ -103,13 +103,13 @@ export class TraceFlowClient {
    */
   private async sendMessage(
     type: 'job' | 'step' | 'log',
-    data: KafkaJobMessage | KafkaStepMessage | KafkaLogMessage
+    data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ): Promise<void> {
     if (!this.connected) {
       throw new Error('Client not connected. Call connect() first.');
     }
 
-    const message: KafkaMessage = {
+    const message: TraceFlowKafkaMessage = {
       type,
       data,
     };
@@ -135,10 +135,10 @@ export class TraceFlowClient {
 
     const source = options.source || this.defaultSource;
 
-    const data: KafkaJobMessage = {
+    const data: TraceFlowKafkaJobMessage = {
       job_id: jobId,
       job_type: options.job_type,
-      status: options.status || JobStatus.PENDING,
+      status: options.status || TraceFlowJobStatus.PENDING,
       source,
       created_at: now,
       updated_at: now,
@@ -170,7 +170,7 @@ export class TraceFlowClient {
    */
   async sendRawMessage(
     type: 'job' | 'step' | 'log',
-    data: KafkaJobMessage | KafkaStepMessage | KafkaLogMessage
+    data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ): Promise<void> {
     await this.sendMessage(type, data);
   }

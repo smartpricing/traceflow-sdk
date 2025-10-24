@@ -1,5 +1,5 @@
 {
-  "name": "traceflow-sdk",
+  "name": "@dev.smartpricing/traceflow-sdk",
   "version": "1.0.0",
   "description": "SDK for sending job tracking messages to Kafka with automatic step management",
   "main": "dist/index.js",
@@ -29,7 +29,7 @@
   "author": "Andrei Borcea",
   "license": "ISC",
   "dependencies": {
-    "kafkajs": "^2.2.4",
+    "@confluentinc/kafka-javascript": "^1.6.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

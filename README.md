@@ -1,46 +1,46 @@
 # TraceFlow SDK
 
-SDK TypeScript per inviare messaggi di tracking dei job su Kafka. Fornisce un'interfaccia semplice per creare, aggiornare e completare job con gestione automatica degli step e logging.
+TypeScript SDK for sending job tracking messages to Kafka. Provides a simple interface to create, update, and complete jobs with automatic step management and logging.
 
-## 🌟 Caratteristiche
+## 🌟 Features
 
-- ✅ **Gestione Job Completa** - Crea, aggiorna, completa o fallisci job
-- ✅ **Auto-incremento Step** - Gli step vengono numerati automaticamente se non specificato
-- ✅ **Logging Integrato** - Helper per log a livello INFO, WARN, ERROR, DEBUG
-- ✅ **TypeScript First** - Completamente tipizzato con TypeScript
-- ✅ **Kafka Flessibile** - Usa configurazione o istanza Kafka esistente
-- ✅ **Job Manager** - Gestione intuitiva di job e step tramite oggetto dedicato
-- ✅ **Metadata Ricchi** - Supporto per tags, metadata personalizzati, params e results
+- ✅ **Complete Job Management** - Create, update, complete or fail jobs
+- ✅ **Auto-increment Steps** - Steps are automatically numbered if not specified
+- ✅ **Integrated Logging** - Helpers for INFO, WARN, ERROR, DEBUG level logs
+- ✅ **TypeScript First** - Fully typed with TypeScript
+- ✅ **Flexible Kafka** - Use configuration or existing Kafka instance
+- ✅ **Job Manager** - Intuitive job and step management via dedicated object
+- ✅ **Rich Metadata** - Support for tags, custom metadata, params and results
 
-## 📦 Installazione
+## 📦 Installation
 
 ```bash
 npm install traceflow-sdk
-# oppure
+# or
 yarn add traceflow-sdk
 ```
 
 ## 🚀 Quick Start
 
-### Esempio Base
+### Basic Example
 
 ```typescript
-import { TraceFlowClient, JobStatus } from 'traceflow-sdk';
+import { TraceFlowClient, TraceFlowJobStatus } from 'traceflow-sdk';
 
-// Crea il client
+// Create the client
 const client = new TraceFlowClient(
   {
     brokers: ['localhost:9092'],
     topic: 'ota-jobs',
     clientId: 'my-app',
   },
-  'my-service' // source di default
+  'my-service' // default source
 );
 
-// Connetti a Kafka
+// Connect to Kafka
 await client.connect();
 
-// Crea un job
+// Create a job
 const job = await client.createJob({
   job_type: 'sync',
   title: 'Sync Airbnb Data',
@@ -49,22 +49,22 @@ const job = await client.createJob({
   params: { start_date: '2024-01-01' },
 });
 
-// Aggiorna lo status a running
-await job.updateJob({ status: JobStatus.RUNNING });
+// Update status to running
+await job.updateJob({ status: TraceFlowJobStatus.RUNNING });
 
-// Crea step (con auto-incremento!)
+// Create step (with auto-increment!)
 const step1 = await job.createStep({
   name: 'Fetch Data',
   step_type: 'fetch',
 });
 
-// Aggiungi log
+// Add log
 await job.info('Fetching data from API...', undefined, step1);
 
-// Completa lo step
+// Complete the step
 await job.completeStep(step1, { records_fetched: 100 });
 
-// Crea altro step (sarà automaticamente step_number: 1)
+// Create another step (will automatically be step_number: 1)
 const step2 = await job.createStep({
   name: 'Transform Data',
   step_type: 'transform',
@@ -72,18 +72,18 @@ const step2 = await job.createStep({
 
 await job.completeStep(step2, { records_transformed: 100 });
 
-// Completa il job
+// Complete the job
 await job.completeJob({ total_records: 100, success: true });
 
-// Disconnetti
+// Disconnect
 await client.disconnect();
 ```
 
-## 📖 Utilizzo
+## 📖 Usage
 
-### 1. Creare il Client
+### 1. Creating the Client
 
-#### Con Configurazione Kafka
+#### With Kafka Configuration
 
 ```typescript
 const client = new TraceFlowClient(
@@ -92,18 +92,20 @@ const client = new TraceFlowClient(
     topic: 'ota-jobs',
     clientId: 'my-app',
   },
-  'my-service' // optional: source di default
+  'my-service' // optional: default source
 );
 
 await client.connect();
 ```
 
-#### Con Istanza Kafka Esistente
+#### With Existing Kafka Instance
 
-Utile quando hai già un'istanza Kafka nella tua applicazione:
+Useful when you already have a Kafka instance in your application:
 
 ```typescript
-import { Kafka } from 'kafkajs';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
+
+const { Kafka } = KafkaJS;
 
 const kafka = new Kafka({
   clientId: 'my-app',
@@ -113,25 +115,25 @@ const kafka = new Kafka({
 const producer = kafka.producer();
 await producer.connect();
 
-// Riusa il producer esistente
+// Reuse the existing producer
 const client = new TraceFlowClient(
   {
     topic: 'ota-jobs',
-    producer: producer, // Usa il producer esistente
+    producer: producer, // Use existing producer
   },
   'my-service'
 );
 
-// Non serve chiamare connect() - il producer è già connesso
+// No need to call connect() - the producer is already connected
 ```
 
-Oppure passa l'istanza Kafka:
+Or pass the Kafka instance:
 
 ```typescript
 const client = new TraceFlowClient(
   {
     topic: 'ota-jobs',
-    kafka: kafka, // Passa l'istanza Kafka
+    kafka: kafka, // Pass the Kafka instance
   },
   'my-service'
 );
@@ -139,11 +141,11 @@ const client = new TraceFlowClient(
 await client.connect();
 ```
 
-### 2. Creare un Job
+### 2. Creating a Job
 
 ```typescript
 const job = await client.createJob({
-  job_type: 'sync', // tipo di job
+  job_type: 'sync', // job type
   title: 'Sync Booking Data',
   description: 'Synchronizing bookings from Airbnb',
   owner: 'sync-service',
@@ -161,24 +163,24 @@ const job = await client.createJob({
 console.log(`Job ID: ${job.getJobId()}`);
 ```
 
-### 3. Aggiornare un Job
+### 3. Updating a Job
 
 ```typescript
-// Aggiorna status
-await job.updateJob({ status: JobStatus.RUNNING });
+// Update status
+await job.updateJob({ status: TraceFlowJobStatus.RUNNING });
 
-// Aggiorna con più campi
+// Update with multiple fields
 await job.updateJob({
-  status: JobStatus.RUNNING,
+  status: TraceFlowJobStatus.RUNNING,
   metadata: { progress: '50%' },
 });
 ```
 
-### 4. Gestire gli Step
+### 4. Managing Steps
 
-#### Auto-incremento (Consigliato)
+#### Auto-increment (Recommended)
 
-Gli step vengono numerati automaticamente partendo da 0:
+Steps are automatically numbered starting from 0:
 
 ```typescript
 // Step 0
@@ -188,116 +190,116 @@ const step1 = await job.createStep({
   input: { endpoint: '/api/bookings' },
 });
 
-// Step 1 (auto-incrementato!)
+// Step 1 (auto-incremented!)
 const step2 = await job.createStep({
   name: 'Transform Data',
   step_type: 'transform',
 });
 
-// Step 2 (auto-incrementato!)
+// Step 2 (auto-incremented!)
 const step3 = await job.createStep({
   name: 'Save Data',
   step_type: 'save',
 });
 ```
 
-#### Numerazione Manuale
+#### Manual Numbering
 
-Puoi anche specificare manualmente i numeri degli step:
+You can also manually specify step numbers:
 
 ```typescript
 const step = await job.createStep({
-  step_number: 10, // Numero esplicito
+  step_number: 10, // Explicit number
   name: 'Special Step',
   step_type: 'process',
 });
 
-// Il prossimo step auto-incrementato sarà 11
+// The next auto-incremented step will be 11
 const nextStep = await job.createStep({
   name: 'Next Step',
 }); // step_number: 11
 ```
 
-#### Completare e Aggiornare Step
+#### Completing and Updating Steps
 
 ```typescript
-// Completa con successo
+// Complete successfully
 await job.completeStep(step1, {
   records_processed: 150,
   duration_ms: 1234,
 });
 
-// Fallisci uno step
+// Fail a step
 await job.failStep(step2, 'Connection timeout');
 
-// Aggiorna uno step
+// Update a step
 await job.updateStep(step1, {
-  status: StepStatus.IN_PROGRESS,
+  status: TraceFlowStepStatus.IN_PROGRESS,
   metadata: { progress: '75%' },
 });
 ```
 
 ### 5. Logging
 
-#### Log Generici
+#### Generic Logs
 
 ```typescript
 await job.log({
-  level: LogLevel.INFO,
-  event_type: EventType.MESSAGE,
+  level: TraceFlowLogLevel.INFO,
+  event_type: TraceFlowEventType.MESSAGE,
   message: 'Processing started',
   details: { batch_size: 100 },
-  step_number: step1, // opzionale: collega a uno step
+  step_number: step1, // optional: link to a step
 });
 ```
 
-#### Helper per Logging
+#### Logging Helpers
 
 ```typescript
-// Log a livello di job
+// Job-level logs
 await job.info('Job started successfully');
 await job.warn('API response slow', { response_time: 3500 });
 await job.error('Connection failed', { error_code: 'CONN_ERR' });
 await job.debug('Debug info', { state: 'processing' });
 
-// Log collegato a uno step
+// Step-linked logs
 await job.info('Fetching data...', undefined, step1);
 await job.warn('Partial data received', { expected: 100, received: 80 }, step1);
 await job.error('Step failed', { reason: 'timeout' }, step1);
 ```
 
-### 6. Completare o Fallire un Job
+### 6. Completing or Failing a Job
 
 ```typescript
-// Successo
+// Success
 await job.completeJob({
   total_records: 150,
   sync_duration_ms: 5000,
   success: true,
 });
 
-// Fallimento
+// Failure
 await job.failJob('Sync failed: connection timeout');
 
-// Cancellare
+// Cancel
 await job.cancelJob();
 ```
 
-### 7. Recuperare un Job Esistente
+### 7. Retrieving an Existing Job
 
-Utile per aggiornare un job da un altro processo o istanza:
+Useful for updating a job from another process or instance:
 
 ```typescript
 const existingJob = client.getJobManager('existing-job-uuid');
 
-// Ora puoi aggiornare il job
-await existingJob.updateJob({ status: JobStatus.RUNNING });
+// Now you can update the job
+await existingJob.updateJob({ status: TraceFlowJobStatus.RUNNING });
 await existingJob.completeJob({ success: true });
 ```
 
-## 📝 Esempi Completi
+## 📝 Complete Examples
 
-### Esempio 1: Sync con Retry Logic
+### Example 1: Sync with Retry Logic
 
 ```typescript
 const job = await client.createJob({
@@ -306,7 +308,7 @@ const job = await client.createJob({
   metadata: { max_retries: '3' },
 });
 
-await job.updateJob({ status: JobStatus.RUNNING });
+await job.updateJob({ status: TraceFlowJobStatus.RUNNING });
 
 const step = await job.createStep({
   name: 'Fetch API',
@@ -320,7 +322,7 @@ for (attempt = 1; attempt <= maxRetries; attempt++) {
   try {
     await job.info(`Attempt ${attempt} of ${maxRetries}`, { attempt }, step);
 
-    // Tuo codice qui...
+    // Your code here...
     const data = await fetchExternalAPI();
 
     await job.completeStep(step, { success: true, attempts: attempt });
@@ -342,7 +344,7 @@ for (attempt = 1; attempt <= maxRetries; attempt++) {
 await job.completeJob({ success: true });
 ```
 
-### Esempio 2: Workflow Complesso
+### Example 2: Complex Workflow
 
 ```typescript
 const job = await client.createJob({
@@ -350,9 +352,9 @@ const job = await client.createJob({
   title: 'Complex Data Import',
 });
 
-await job.updateJob({ status: JobStatus.RUNNING });
+await job.updateJob({ status: TraceFlowJobStatus.RUNNING });
 
-// Fase 1: Download
+// Phase 1: Download
 const downloadStep = await job.createStep({
   name: 'Download CSV',
   step_type: 'download',
@@ -362,7 +364,7 @@ await job.info('Starting download...', undefined, downloadStep);
 const fileData = await downloadFile();
 await job.completeStep(downloadStep, { file_size: fileData.size });
 
-// Fase 2: Validazione
+// Phase 2: Validation
 const validateStep = await job.createStep({
   name: 'Validate Data',
   step_type: 'validation',
@@ -378,7 +380,7 @@ if (!validation.valid) {
 
 await job.completeStep(validateStep, { records_validated: validation.count });
 
-// Fase 3: Import
+// Phase 3: Import
 const importStep = await job.createStep({
   name: 'Import to Database',
   step_type: 'import',
@@ -393,7 +395,7 @@ for (const batch of validation.batches) {
 
 await job.completeStep(importStep, { imported });
 
-// Completa
+// Complete
 await job.completeJob({
   total_imported: imported,
   file_size: fileData.size,
@@ -411,71 +413,80 @@ await job.completeJob({
 new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 ```
 
-#### Metodi
+#### Methods
 
-- `connect(): Promise<void>` - Connetti a Kafka
-- `disconnect(): Promise<void>` - Disconnetti da Kafka
-- `createJob(options: CreateJobOptions): Promise<JobManager>` - Crea un nuovo job
-- `getJobManager(jobId: string, source?: string): JobManager` - Ottieni manager per job esistente
-- `isConnected(): boolean` - Verifica se connesso
-- `getTopic(): string` - Ottieni il topic configurato
-- `getDefaultSource(): string | undefined` - Ottieni la source di default
+- `connect(): Promise<void>` - Connect to Kafka
+- `disconnect(): Promise<void>` - Disconnect from Kafka
+- `createJob(options: CreateJobOptions): Promise<JobManager>` - Create a new job
+- `getJobManager(jobId: string, source?: string): JobManager` - Get manager for existing job
+- `isConnected(): boolean` - Check if connected
+- `getTopic(): string` - Get configured topic
+- `getDefaultSource(): string | undefined` - Get default source
 
 ### JobManager
 
-#### Metodi Job
+#### Job Methods
 
-- `getJobId(): string` - Ottieni job ID
-- `updateJob(options: UpdateJobOptions): Promise<void>` - Aggiorna job
-- `completeJob(result?: any): Promise<void>` - Completa job con successo
-- `failJob(error: string): Promise<void>` - Fallisci job
-- `cancelJob(): Promise<void>` - Cancella job
+- `getJobId(): string` - Get job ID
+- `updateJob(options: UpdateJobOptions): Promise<void>` - Update job
+- `completeJob(result?: any): Promise<void>` - Complete job successfully
+- `failJob(error: string): Promise<void>` - Fail job
+- `cancelJob(): Promise<void>` - Cancel job
 
-#### Metodi Step
+#### Step Methods
 
-- `createStep(options?: CreateStepOptions): Promise<number>` - Crea step (con auto-increment)
-- `updateStep(stepNumber: number, options?: UpdateStepOptions): Promise<void>` - Aggiorna step
-- `completeStep(stepNumber: number, output?: any): Promise<void>` - Completa step
-- `failStep(stepNumber: number, error: string): Promise<void>` - Fallisci step
+- `createStep(options?: CreateStepOptions): Promise<number>` - Create step (with auto-increment)
+- `updateStep(stepNumber: number, options?: UpdateStepOptions): Promise<void>` - Update step
+- `completeStep(stepNumber: number, output?: any): Promise<void>` - Complete step
+- `failStep(stepNumber: number, error: string): Promise<void>` - Fail step
 
-#### Metodi Log
+#### Log Methods
 
-- `log(options: CreateLogOptions): Promise<void>` - Crea log generico
-- `info(message: string, details?: any, stepNumber?: number): Promise<void>` - Log INFO
-- `warn(message: string, details?: any, stepNumber?: number): Promise<void>` - Log WARN
-- `error(message: string, details?: any, stepNumber?: number): Promise<void>` - Log ERROR
-- `debug(message: string, details?: any, stepNumber?: number): Promise<void>` - Log DEBUG
+- `log(options: CreateLogOptions): Promise<void>` - Create generic log
+- `info(message: string, details?: any, stepNumber?: number): Promise<void>` - INFO log
+- `warn(message: string, details?: any, stepNumber?: number): Promise<void>` - WARN log
+- `error(message: string, details?: any, stepNumber?: number): Promise<void>` - ERROR log
+- `debug(message: string, details?: any, stepNumber?: number): Promise<void>` - DEBUG log
 
 ## 🎯 Best Practices
 
-1. **Usa l'auto-incremento** per gli step quando possibile - è più semplice e meno error-prone
-2. **Aggiungi logging dettagliato** - aiuta nel debugging e monitoring
-3. **Usa metadata e tags** - facilita il filtering e l'analisi dei job
-4. **Gestisci sempre gli errori** - usa `failJob()` e `failStep()` appropriatamente
-5. **Riusa le connessioni Kafka** - passa istanze esistenti per migliori performance
-6. **Chiudi le connessioni** - chiama sempre `disconnect()` quando finito
+1. **Use auto-increment** for steps when possible - it's simpler and less error-prone
+2. **Add detailed logging** - helps with debugging and monitoring
+3. **Use metadata and tags** - facilitates filtering and job analysis
+4. **Always handle errors** - use `failJob()` and `failStep()` appropriately
+5. **Reuse Kafka connections** - pass existing instances for better performance
+6. **Close connections** - always call `disconnect()` when done
 
-## 📊 Schema Messaggi Kafka
+## 📊 Kafka Message Schema
 
-I messaggi inviati al topic Kafka hanno questo formato:
+Messages sent to the Kafka topic have this format:
 
 ```json
 {
   "type": "job" | "step" | "log",
   "data": {
-    // ... campi specifici per tipo
+    // ... type-specific fields
   }
 }
 ```
 
-Vedi la documentazione del servizio `cb-channel-scylla-writter` per dettagli completi sullo schema.
+See the `cb-channel-scylla-writter` service documentation for complete schema details.
 
-## 🤝 Integrazione
+## 🤝 Integration
 
-Questo SDK è progettato per funzionare con:
+This SDK is designed to work with:
 
-- **cb-channel-scylla-writter** - Consumer Kafka che scrive su ScyllaDB
-- **scylla-job-dashboard** - Dashboard Nuxt per visualizzare i job
+- **cb-channel-scylla-writter** - Kafka consumer that writes to ScyllaDB
+- **scylla-job-dashboard** - Nuxt dashboard for visualizing jobs
+
+## 🚀 Performance
+
+This SDK uses [@confluentinc/kafka-javascript](https://github.com/confluentinc/confluent-kafka-javascript), Confluent's high-performance JavaScript client based on librdkafka. This provides:
+
+- **Higher throughput** - Native C/C++ performance through librdkafka
+- **Lower latency** - Optimized for production workloads
+- **Reliability** - Battle-tested client used by Confluent
+- **KafkaJS API compatibility** - Easy migration path from KafkaJS
 
 ## 📄 License
 

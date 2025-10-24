@@ -126,10 +126,10 @@ export class TraceFlowClient {
   }
 
   /**
-   * Create a new job
-   * Returns a JobManager instance to manage the job
+   * Start a new trace
+   * Returns a JobManager instance to manage the trace
    */
-  async createJob(options: CreateJobOptions = {}): Promise<JobManager> {
+  async trace(options: CreateJobOptions = {}): Promise<JobManager> {
     const jobId = uuidv4();
     const now = new Date().toISOString();
 
@@ -154,6 +154,22 @@ export class TraceFlowClient {
 
     // Return a JobManager for this job
     return new JobManager(jobId, source, this.sendMessage.bind(this));
+  }
+
+  /**
+   * Alias for trace() - for backward compatibility
+   * @deprecated Use trace() instead
+   */
+  async traceJob(options: CreateJobOptions = {}): Promise<JobManager> {
+    return this.trace(options);
+  }
+
+  /**
+   * Alias for trace() - for backward compatibility
+   * @deprecated Use trace() instead
+   */
+  async createJob(options: CreateJobOptions = {}): Promise<JobManager> {
+    return this.trace(options);
   }
 
   /**

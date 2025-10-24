@@ -62,9 +62,24 @@ export class JobManager {
   }
 
   /**
-   * Complete the job successfully
+   * Start the trace (set status to RUNNING)
    */
-  async completeJob(result?: any): Promise<void> {
+  async start(): Promise<void> {
+    await this.updateJob({ status: TraceFlowJobStatus.RUNNING });
+  }
+
+  /**
+   * Alias for start() - for backward compatibility
+   * @deprecated Use start() instead
+   */
+  async startJob(): Promise<void> {
+    return this.start();
+  }
+
+  /**
+   * Complete the trace successfully
+   */
+  async complete(result?: any): Promise<void> {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaJobMessage = {
@@ -79,9 +94,33 @@ export class JobManager {
   }
 
   /**
-   * Fail the job
+   * Finish the trace successfully (alias for complete)
+   * Utility method for better readability
    */
-  async failJob(error: string): Promise<void> {
+  async finish(result?: any): Promise<void> {
+    return this.complete(result);
+  }
+
+  /**
+   * Alias for complete() - for backward compatibility
+   * @deprecated Use complete() instead
+   */
+  async completeJob(result?: any): Promise<void> {
+    return this.complete(result);
+  }
+
+  /**
+   * Alias for finish() - for backward compatibility
+   * @deprecated Use finish() instead
+   */
+  async finishJob(result?: any): Promise<void> {
+    return this.finish(result);
+  }
+
+  /**
+   * Fail the trace
+   */
+  async fail(error: string): Promise<void> {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaJobMessage = {
@@ -96,9 +135,17 @@ export class JobManager {
   }
 
   /**
-   * Cancel the job
+   * Alias for fail() - for backward compatibility
+   * @deprecated Use fail() instead
    */
-  async cancelJob(): Promise<void> {
+  async failJob(error: string): Promise<void> {
+    return this.fail(error);
+  }
+
+  /**
+   * Cancel the trace
+   */
+  async cancel(): Promise<void> {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaJobMessage = {
@@ -112,10 +159,18 @@ export class JobManager {
   }
 
   /**
-   * Create a new step
+   * Alias for cancel() - for backward compatibility
+   * @deprecated Use cancel() instead
+   */
+  async cancelJob(): Promise<void> {
+    return this.cancel();
+  }
+
+  /**
+   * Trace a new step
    * If step_number is not provided, it will be auto-incremented
    */
-  async createStep(options: CreateStepOptions = {}): Promise<number> {
+  async step(options: CreateStepOptions = {}): Promise<number> {
     const now = new Date().toISOString();
 
     // Auto-increment step number if not provided
@@ -149,6 +204,22 @@ export class JobManager {
   }
 
   /**
+   * Alias for step() - for backward compatibility
+   * @deprecated Use step() instead
+   */
+  async traceStep(options: CreateStepOptions = {}): Promise<number> {
+    return this.step(options);
+  }
+
+  /**
+   * Alias for step() - for backward compatibility
+   * @deprecated Use step() instead
+   */
+  async createStep(options: CreateStepOptions = {}): Promise<number> {
+    return this.step(options);
+  }
+
+  /**
    * Update an existing step
    */
   async updateStep(stepNumber: number, options: UpdateStepOptions = {}): Promise<void> {
@@ -167,7 +238,7 @@ export class JobManager {
   }
 
   /**
-   * Complete a step successfully
+   * Complete a step
    */
   async completeStep(stepNumber: number, output?: any): Promise<void> {
     const now = new Date().toISOString();
@@ -182,6 +253,14 @@ export class JobManager {
     };
 
     await this.sendMessage('step', data);
+  }
+
+  /**
+   * Finish a step (alias for completeStep)
+   * Utility method for better readability
+   */
+  async finishStep(stepNumber: number, output?: any): Promise<void> {
+    return this.completeStep(stepNumber, output);
   }
 
   /**

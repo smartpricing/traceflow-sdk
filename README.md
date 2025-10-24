@@ -22,7 +22,43 @@ yarn add traceflow-sdk
 
 ## 🚀 Quick Start
 
-### Basic Example
+### Singleton Pattern (Recommended)
+
+The easiest way to use TraceFlow is with the singleton pattern:
+
+```typescript
+import { initializeTraceFlow, getTraceFlow } from 'traceflow-sdk';
+
+// Initialize once at application startup
+const client = initializeTraceFlow(
+  {
+    brokers: ['localhost:9092'],
+    topic: 'ota-jobs',
+    clientId: 'my-app',
+  },
+  'my-service' // default source
+);
+
+await client.connect();
+
+// Now trace from anywhere in your application
+async function someOperation() {
+  const client = getTraceFlow();
+  
+  const trace = await client.trace({
+    job_type: 'sync',
+    title: 'Data Sync',
+  });
+  
+  await trace.start();
+  // ... your logic
+  await trace.finish();
+}
+```
+
+### Standard Usage
+
+You can also create instances directly:
 
 ```typescript
 import { TraceFlowClient, TraceFlowJobStatus } from 'traceflow-sdk';
@@ -81,11 +117,39 @@ await client.disconnect();
 
 ## 📖 Usage
 
-### 1. Creating the Client
+### 1. Initializing the Client
 
-#### With Kafka Configuration
+#### Singleton Pattern (Recommended)
+
+Initialize once, use everywhere:
 
 ```typescript
+import { initializeTraceFlow, getTraceFlow } from 'traceflow-sdk';
+
+// At application startup (e.g., in your main.ts or app.ts)
+const client = initializeTraceFlow(
+  {
+    brokers: ['localhost:9092'],
+    topic: 'ota-jobs',
+    clientId: 'my-app',
+  },
+  'my-service'
+);
+
+await client.connect();
+
+// Later, in any module or function
+const client = getTraceFlow();
+const trace = await client.trace({ ... });
+```
+
+#### Standard Instance
+
+Or create a standard instance if you prefer:
+
+```typescript
+import { TraceFlowClient } from 'traceflow-sdk';
+
 const client = new TraceFlowClient(
   {
     brokers: ['localhost:9092'],
@@ -416,13 +480,27 @@ await job.completeJob({
 
 ### TraceFlowClient
 
+#### Singleton Methods (Recommended)
+
+- `initializeTraceFlow(config: TraceFlowConfig, defaultSource?: string): TraceFlowClient` - Initialize singleton
+- `getTraceFlow(): TraceFlowClient` - Get singleton instance
+- `hasTraceFlow(): boolean` - Check if initialized
+- `resetTraceFlow(): void` - Reset singleton (for testing)
+
+#### Static Methods
+
+- `TraceFlowClient.initialize(config, defaultSource?)` - Initialize singleton
+- `TraceFlowClient.getInstance()` - Get singleton instance
+- `TraceFlowClient.hasInstance()` - Check if initialized
+- `TraceFlowClient.reset()` - Reset singleton
+
 #### Constructor
 
 ```typescript
 new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 ```
 
-#### Methods
+#### Instance Methods
 
 - `connect(): Promise<void>` - Connect to Kafka
 - `disconnect(): Promise<void>` - Disconnect from Kafka
@@ -471,12 +549,13 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 
 ## 🎯 Best Practices
 
-1. **Use auto-increment** for steps when possible - it's simpler and less error-prone
-2. **Add detailed logging** - helps with debugging and monitoring
-3. **Use metadata and tags** - facilitates filtering and job analysis
-4. **Always handle errors** - use `failJob()` and `failStep()` appropriately
-5. **Reuse Kafka connections** - pass existing instances for better performance
-6. **Close connections** - always call `disconnect()` when done
+1. **Use the singleton pattern** - Initialize once with `initializeTraceFlow()`, use everywhere with `getTraceFlow()`
+2. **Use auto-increment** for steps when possible - it's simpler and less error-prone
+3. **Add detailed logging** - helps with debugging and monitoring
+4. **Use metadata and tags** - facilitates filtering and job analysis
+5. **Always handle errors** - use `fail()` and `failStep()` appropriately
+6. **Reuse Kafka connections** - the singleton pattern handles this automatically
+7. **Close connections** - call `disconnect()` on application shutdown
 
 ## 📊 Kafka Message Schema
 

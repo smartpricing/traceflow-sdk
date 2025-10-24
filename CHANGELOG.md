@@ -2,7 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### 1.0.2 (2025-10-24)
+## [1.0.2] - 2025-10-24
+
+### Added
+- **Singleton Pattern** - Now you can initialize once and use everywhere:
+  - `initializeTraceFlow(config, source?)` - Initialize the singleton
+  - `getTraceFlow()` - Get the singleton instance from anywhere
+  - `hasTraceFlow()` - Check if initialized
+  - `resetTraceFlow()` - Reset singleton (useful for testing)
+- New example file `singleton-usage.ts` demonstrating the singleton pattern
+- Static methods on `TraceFlowClient`:
+  - `TraceFlowClient.initialize()`
+  - `TraceFlowClient.getInstance()`
+  - `TraceFlowClient.hasInstance()`
+  - `TraceFlowClient.reset()`
+
+### Improved
+- Documentation updated with singleton pattern as recommended approach
+- Better organization for multi-module applications
+- Simplified setup for most use cases
 
 ## [1.0.1] - 2025-10-24
 

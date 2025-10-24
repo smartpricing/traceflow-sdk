@@ -2,7 +2,7 @@
  * Basic usage example of TraceFlow SDK
  */
 
-import { TraceFlowClient, JobStatus, StepStatus } from '../src';
+import { TraceFlowClient } from '../src';
 
 async function basicExample() {
   // Create client with configuration
@@ -19,8 +19,8 @@ async function basicExample() {
   await client.connect();
 
   try {
-    // Create a new job
-    const job = await client.createJob({
+    // Start a new trace
+    const trace = await client.trace({
       job_type: 'sync',
       title: 'Sync Airbnb Data',
       description: 'Synchronizing booking data from Airbnb',
@@ -36,13 +36,13 @@ async function basicExample() {
       },
     });
 
-    console.log(`Job created: ${job.getJobId()}`);
+    console.log(`Trace created: ${trace.getJobId()}`);
 
-    // Update job status to running
-    await job.updateJob({ status: JobStatus.RUNNING });
+    // Start the trace (sets status to running)
+    await trace.start();
 
-    // Create first step (step_number will be auto-incremented from 0)
-    const step1 = await job.createStep({
+    // Add first step (step_number will be auto-incremented from 0)
+    const step1 = await trace.step({
       name: 'Fetch Data from Airbnb',
       step_type: 'fetch',
       input: { endpoint: '/api/bookings' },
@@ -50,55 +50,55 @@ async function basicExample() {
     console.log(`Step ${step1} started`);
 
     // Add a log to the step
-    await job.info('Connecting to Airbnb API...', { attempt: 1 }, step1);
+    await trace.info('Connecting to Airbnb API...', { attempt: 1 }, step1);
 
     // Simulate some work
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Complete the step
-    await job.completeStep(step1, {
+    // Finish the step
+    await trace.finishStep(step1, {
       bookings_count: 150,
       last_sync: new Date().toISOString(),
     });
 
-    // Create second step (will be auto-incremented to 1)
-    const step2 = await job.createStep({
+    // Add second step (will be auto-incremented to 1)
+    const step2 = await trace.step({
       name: 'Transform Data',
       step_type: 'transform',
     });
 
-    await job.info('Transforming booking data...', undefined, step2);
+    await trace.info('Transforming booking data...', undefined, step2);
 
     // Simulate work
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    await job.completeStep(step2, {
+    await trace.finishStep(step2, {
       transformed_records: 150,
     });
 
-    // Create third step (will be auto-incremented to 2)
-    const step3 = await job.createStep({
+    // Add third step (will be auto-incremented to 2)
+    const step3 = await trace.step({
       name: 'Save to Database',
       step_type: 'save',
     });
 
-    await job.info('Saving to database...', undefined, step3);
+    await trace.info('Saving to database...', undefined, step3);
 
     // Simulate work
     await new Promise((resolve) => setTimeout(resolve, 800));
 
-    await job.completeStep(step3, {
+    await trace.finishStep(step3, {
       saved_records: 150,
     });
 
-    // Complete the job successfully
-    await job.completeJob({
+    // Finish the trace successfully
+    await trace.finish({
       total_bookings: 150,
       sync_duration_ms: 2300,
       success: true,
     });
 
-    console.log('Job completed successfully!');
+    console.log('Trace completed successfully!');
   } catch (error) {
     console.error('Error:', error);
   } finally {

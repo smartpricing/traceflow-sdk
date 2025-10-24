@@ -40,8 +40,8 @@ const client = new TraceFlowClient(
 // Connect to Kafka
 await client.connect();
 
-// Create a job
-const job = await client.createJob({
+// Start a new trace
+const trace = await client.trace({
   job_type: 'sync',
   title: 'Sync Airbnb Data',
   description: 'Synchronizing booking data',
@@ -49,31 +49,31 @@ const job = await client.createJob({
   params: { start_date: '2024-01-01' },
 });
 
-// Update status to running
-await job.updateJob({ status: TraceFlowJobStatus.RUNNING });
+// Start the trace (set status to running)
+await trace.start();
 
-// Create step (with auto-increment!)
-const step1 = await job.createStep({
+// Add a step (with auto-increment!)
+const step1 = await trace.step({
   name: 'Fetch Data',
   step_type: 'fetch',
 });
 
 // Add log
-await job.info('Fetching data from API...', undefined, step1);
+await trace.info('Fetching data from API...', undefined, step1);
 
-// Complete the step
-await job.completeStep(step1, { records_fetched: 100 });
+// Finish the step
+await trace.finishStep(step1, { records_fetched: 100 });
 
-// Create another step (will automatically be step_number: 1)
-const step2 = await job.createStep({
+// Add another step (will automatically be step_number: 1)
+const step2 = await trace.step({
   name: 'Transform Data',
   step_type: 'transform',
 });
 
-await job.completeStep(step2, { records_transformed: 100 });
+await trace.finishStep(step2, { records_transformed: 100 });
 
-// Complete the job
-await job.completeJob({ total_records: 100, success: true });
+// Finish the trace
+await trace.finish({ total_records: 100, success: true });
 
 // Disconnect
 await client.disconnect();
@@ -141,10 +141,10 @@ const client = new TraceFlowClient(
 await client.connect();
 ```
 
-### 2. Creating a Job
+### 2. Starting a Trace
 
 ```typescript
-const job = await client.createJob({
+const trace = await client.trace({
   job_type: 'sync', // job type
   title: 'Sync Booking Data',
   description: 'Synchronizing bookings from Airbnb',
@@ -160,23 +160,26 @@ const job = await client.createJob({
   },
 });
 
-console.log(`Job ID: ${job.getJobId()}`);
+console.log(`Trace ID: ${trace.getJobId()}`);
 ```
 
-### 3. Updating a Job
+### 3. Managing Trace Status
 
 ```typescript
-// Update status
-await job.updateJob({ status: TraceFlowJobStatus.RUNNING });
+// Start the trace (utility method - sets status to RUNNING)
+await trace.start();
+
+// Or update status manually
+await trace.updateJob({ status: TraceFlowJobStatus.RUNNING });
 
 // Update with multiple fields
-await job.updateJob({
+await trace.updateJob({
   status: TraceFlowJobStatus.RUNNING,
   metadata: { progress: '50%' },
 });
 ```
 
-### 4. Managing Steps
+### 4. Adding Steps
 
 #### Auto-increment (Recommended)
 
@@ -184,20 +187,20 @@ Steps are automatically numbered starting from 0:
 
 ```typescript
 // Step 0
-const step1 = await job.createStep({
+const step1 = await trace.step({
   name: 'Fetch Data',
   step_type: 'fetch',
   input: { endpoint: '/api/bookings' },
 });
 
 // Step 1 (auto-incremented!)
-const step2 = await job.createStep({
+const step2 = await trace.step({
   name: 'Transform Data',
   step_type: 'transform',
 });
 
 // Step 2 (auto-incremented!)
-const step3 = await job.createStep({
+const step3 = await trace.step({
   name: 'Save Data',
   step_type: 'save',
 });
@@ -208,32 +211,35 @@ const step3 = await job.createStep({
 You can also manually specify step numbers:
 
 ```typescript
-const step = await job.createStep({
+const step = await trace.step({
   step_number: 10, // Explicit number
   name: 'Special Step',
   step_type: 'process',
 });
 
 // The next auto-incremented step will be 11
-const nextStep = await job.createStep({
+const nextStep = await trace.step({
   name: 'Next Step',
 }); // step_number: 11
 ```
 
-#### Completing and Updating Steps
+#### Finishing and Managing Steps
 
 ```typescript
-// Complete successfully
-await job.completeStep(step1, {
+// Finish successfully (utility method)
+await trace.finishStep(step1, {
   records_processed: 150,
   duration_ms: 1234,
 });
 
+// Or use completeStep (same as finishStep)
+await trace.completeStep(step1, { result: 'success' });
+
 // Fail a step
-await job.failStep(step2, 'Connection timeout');
+await trace.failStep(step2, 'Connection timeout');
 
 // Update a step
-await job.updateStep(step1, {
+await trace.updateStep(step1, {
   status: TraceFlowStepStatus.IN_PROGRESS,
   metadata: { progress: '75%' },
 });
@@ -244,7 +250,7 @@ await job.updateStep(step1, {
 #### Generic Logs
 
 ```typescript
-await job.log({
+await trace.log({
   level: TraceFlowLogLevel.INFO,
   event_type: TraceFlowEventType.MESSAGE,
   message: 'Processing started',
@@ -256,45 +262,48 @@ await job.log({
 #### Logging Helpers
 
 ```typescript
-// Job-level logs
-await job.info('Job started successfully');
-await job.warn('API response slow', { response_time: 3500 });
-await job.error('Connection failed', { error_code: 'CONN_ERR' });
-await job.debug('Debug info', { state: 'processing' });
+// Trace-level logs
+await trace.info('Trace started successfully');
+await trace.warn('API response slow', { response_time: 3500 });
+await trace.error('Connection failed', { error_code: 'CONN_ERR' });
+await trace.debug('Debug info', { state: 'processing' });
 
 // Step-linked logs
-await job.info('Fetching data...', undefined, step1);
-await job.warn('Partial data received', { expected: 100, received: 80 }, step1);
-await job.error('Step failed', { reason: 'timeout' }, step1);
+await trace.info('Fetching data...', undefined, step1);
+await trace.warn('Partial data received', { expected: 100, received: 80 }, step1);
+await trace.error('Step failed', { reason: 'timeout' }, step1);
 ```
 
-### 6. Completing or Failing a Job
+### 6. Finishing or Failing a Trace
 
 ```typescript
-// Success
-await job.completeJob({
+// Finish successfully (utility method)
+await trace.finish({
   total_records: 150,
   sync_duration_ms: 5000,
   success: true,
 });
 
+// Or use complete (same as finish)
+await trace.complete({ success: true });
+
 // Failure
-await job.failJob('Sync failed: connection timeout');
+await trace.fail('Sync failed: connection timeout');
 
 // Cancel
-await job.cancelJob();
+await trace.cancel();
 ```
 
-### 7. Retrieving an Existing Job
+### 7. Retrieving an Existing Trace
 
-Useful for updating a job from another process or instance:
+Useful for updating a trace from another process or instance:
 
 ```typescript
-const existingJob = client.getJobManager('existing-job-uuid');
+const existingTrace = client.getJobManager('existing-trace-uuid');
 
-// Now you can update the job
-await existingJob.updateJob({ status: TraceFlowJobStatus.RUNNING });
-await existingJob.completeJob({ success: true });
+// Now you can update the trace
+await existingTrace.start();
+await existingTrace.complete({ success: true });
 ```
 
 ## 📝 Complete Examples
@@ -417,28 +426,40 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 
 - `connect(): Promise<void>` - Connect to Kafka
 - `disconnect(): Promise<void>` - Disconnect from Kafka
-- `createJob(options: CreateJobOptions): Promise<JobManager>` - Create a new job
-- `getJobManager(jobId: string, source?: string): JobManager` - Get manager for existing job
+- `trace(options: CreateJobOptions): Promise<JobManager>` - Start a new trace
+- `traceJob(options: CreateJobOptions): Promise<JobManager>` - Alias for trace() (deprecated)
+- `createJob(options: CreateJobOptions): Promise<JobManager>` - Alias for trace() (deprecated)
+- `getJobManager(jobId: string, source?: string): JobManager` - Get manager for existing trace
 - `isConnected(): boolean` - Check if connected
 - `getTopic(): string` - Get configured topic
 - `getDefaultSource(): string | undefined` - Get default source
 
 ### JobManager
 
-#### Job Methods
+#### Trace Methods
 
-- `getJobId(): string` - Get job ID
-- `updateJob(options: UpdateJobOptions): Promise<void>` - Update job
-- `completeJob(result?: any): Promise<void>` - Complete job successfully
-- `failJob(error: string): Promise<void>` - Fail job
-- `cancelJob(): Promise<void>` - Cancel job
+- `getJobId(): string` - Get trace ID
+- `start(): Promise<void>` - Start trace (set status to RUNNING)
+- `updateJob(options: UpdateJobOptions): Promise<void>` - Update trace
+- `finish(result?: any): Promise<void>` - Finish trace successfully
+- `complete(result?: any): Promise<void>` - Complete trace (same as finish)
+- `fail(error: string): Promise<void>` - Fail trace
+- `cancel(): Promise<void>` - Cancel trace
+- `startJob(): Promise<void>` - Alias for start() (deprecated)
+- `finishJob(result?: any): Promise<void>` - Alias for finish() (deprecated)
+- `completeJob(result?: any): Promise<void>` - Alias for complete() (deprecated)
+- `failJob(error: string): Promise<void>` - Alias for fail() (deprecated)
+- `cancelJob(): Promise<void>` - Alias for cancel() (deprecated)
 
 #### Step Methods
 
-- `createStep(options?: CreateStepOptions): Promise<number>` - Create step (with auto-increment)
+- `step(options?: CreateStepOptions): Promise<number>` - Add a step (with auto-increment)
 - `updateStep(stepNumber: number, options?: UpdateStepOptions): Promise<void>` - Update step
-- `completeStep(stepNumber: number, output?: any): Promise<void>` - Complete step
+- `finishStep(stepNumber: number, output?: any): Promise<void>` - Finish step successfully
+- `completeStep(stepNumber: number, output?: any): Promise<void>` - Complete step (same as finishStep)
 - `failStep(stepNumber: number, error: string): Promise<void>` - Fail step
+- `traceStep(options?: CreateStepOptions): Promise<number>` - Alias for step() (deprecated)
+- `createStep(options?: CreateStepOptions): Promise<number>` - Alias for step() (deprecated)
 
 #### Log Methods
 

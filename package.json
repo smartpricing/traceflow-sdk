@@ -11,7 +11,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "standard-version"
   },
   "repository": {
     "type": "git",

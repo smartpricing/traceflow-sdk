@@ -284,7 +284,7 @@ export class TraceFlowClient {
   }
   
   private async sendMessage(
-    type: 'job' | 'step' | 'log',
+    type: 'trace' | 'step' | 'log',
     data: TraceFlowKafkaJobMessage | ...
   ): Promise<void> {
     const message = { type, data };

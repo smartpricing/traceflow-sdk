@@ -249,7 +249,7 @@ export interface TraceFlowKafkaLogMessage {
  * Combined Kafka message
  */
 export interface TraceFlowKafkaMessage {
-  type: 'job' | 'step' | 'log';
+  type: 'trace' | 'step' | 'log';
   data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage;
 }
 

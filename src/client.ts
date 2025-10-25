@@ -5,6 +5,7 @@ import {
   TraceFlowKafkaConfig,
   TraceFlowConfig,
   CreateJobOptions,
+  TraceOptions,
   TraceFlowKafkaJobMessage,
   TraceFlowKafkaStepMessage,
   TraceFlowKafkaLogMessage,
@@ -34,7 +35,7 @@ export class TraceFlowClient {
   private ownsProducer: boolean = true; // Track if we created the producer or received it
 
   constructor(config: TraceFlowConfig, defaultSource?: string) {
-    this.topic = config.topic;
+    this.topic = config.topic || 'traceflow'; // Default to 'traceflow'
     this.defaultSource = defaultSource;
 
     if (isKafkaConfig(config)) {
@@ -167,8 +168,10 @@ export class TraceFlowClient {
   /**
    * Start a new trace
    * Returns a JobManager instance to manage the trace
+   * @param options - Job creation options
+   * @param traceOptions - Trace behavior options (e.g., autoCloseSteps)
    */
-  async trace(options: CreateJobOptions = {}): Promise<JobManager> {
+  async trace(options: CreateJobOptions = {}, traceOptions?: TraceOptions): Promise<JobManager> {
     const jobId = uuidv4();
     const now = new Date().toISOString();
 
@@ -192,31 +195,31 @@ export class TraceFlowClient {
     await this.sendMessage('job', data);
 
     // Return a JobManager for this job
-    return new JobManager(jobId, source, this.sendMessage.bind(this));
+    return new JobManager(jobId, source, this.sendMessage.bind(this), traceOptions);
   }
 
   /**
    * Alias for trace() - for backward compatibility
    * @deprecated Use trace() instead
    */
-  async traceJob(options: CreateJobOptions = {}): Promise<JobManager> {
-    return this.trace(options);
+  async traceJob(options: CreateJobOptions = {}, traceOptions?: TraceOptions): Promise<JobManager> {
+    return this.trace(options, traceOptions);
   }
 
   /**
    * Alias for trace() - for backward compatibility
    * @deprecated Use trace() instead
    */
-  async createJob(options: CreateJobOptions = {}): Promise<JobManager> {
-    return this.trace(options);
+  async createJob(options: CreateJobOptions = {}, traceOptions?: TraceOptions): Promise<JobManager> {
+    return this.trace(options, traceOptions);
   }
 
   /**
    * Get a JobManager for an existing job
    * Useful if you need to update a job from a different process/instance
    */
-  getJobManager(jobId: string, source?: string): JobManager {
-    return new JobManager(jobId, source || this.defaultSource, this.sendMessage.bind(this));
+  getJobManager(jobId: string, source?: string, traceOptions?: TraceOptions): JobManager {
+    return new JobManager(jobId, source || this.defaultSource, this.sendMessage.bind(this), traceOptions);
   }
 
   /**

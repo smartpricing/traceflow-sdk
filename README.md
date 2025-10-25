@@ -67,7 +67,7 @@ import { TraceFlowClient, TraceFlowJobStatus } from 'traceflow-sdk';
 const client = new TraceFlowClient(
   {
     brokers: ['localhost:9092'],
-    topic: 'ota-jobs',
+    // topic: 'traceflow', // Optional (default: 'traceflow')
     clientId: 'my-app',
   },
   'my-service' // default source
@@ -88,28 +88,55 @@ const trace = await client.trace({
 // Start the trace (set status to running)
 await trace.start();
 
-// Add a step (with auto-increment!)
+// Add a step - returns a Step instance
 const step1 = await trace.step({
   name: 'Fetch Data',
   step_type: 'fetch',
 });
 
-// Add log
-await trace.info('Fetching data from API...', undefined, step1);
+// Use the Step instance directly
+await step1.info('Fetching data from API...');
+await step1.finish({ records_fetched: 100 });
 
-// Finish the step
-await trace.finishStep(step1, { records_fetched: 100 });
-
-// Add another step (will automatically be step_number: 1)
+// Add another step
 const step2 = await trace.step({
   name: 'Transform Data',
   step_type: 'transform',
 });
 
-await trace.finishStep(step2, { records_transformed: 100 });
+await step2.finish({ records_transformed: 100 });
 
 // Finish the trace
 await trace.finish({ total_records: 100, success: true });
+
+// Disconnect
+await client.disconnect();
+```
+
+### With Auto-Close Steps
+
+Enable automatic step closing when creating a new step:
+
+```typescript
+// Enable autoCloseSteps option
+const trace = await client.trace(
+  {
+    job_type: 'sync',
+    title: 'Data Sync',
+  },
+  { autoCloseSteps: true } // Automatically close previous step
+);
+
+await trace.start();
+
+const step1 = await trace.step({ name: 'Fetch' });
+// Do work, but DON'T close step1
+
+const step2 = await trace.step({ name: 'Process' });
+// step1 is automatically closed when step2 is created!
+
+await step2.finish();
+await trace.finish();
 
 // Disconnect
 await client.disconnect();
@@ -130,7 +157,7 @@ import { initializeTraceFlow, getTraceFlow } from 'traceflow-sdk';
 const client = initializeTraceFlow(
   {
     brokers: ['localhost:9092'],
-    topic: 'ota-jobs',
+    // topic: 'traceflow', // Optional (default: 'traceflow')
     clientId: 'my-app',
   },
   'my-service'
@@ -153,7 +180,7 @@ import { TraceFlowClient } from 'traceflow-sdk';
 const client = new TraceFlowClient(
   {
     brokers: ['localhost:9092'],
-    topic: 'ota-jobs',
+    // topic: 'traceflow', // Optional (default: 'traceflow')
     clientId: 'my-app',
   },
   'my-service' // optional: default source
@@ -182,8 +209,9 @@ await producer.connect();
 // Reuse the existing producer
 const client = new TraceFlowClient(
   {
-    topic: 'ota-jobs',
-    producer: producer, // Use existing producer
+    kafka,
+    producer,
+    // topic: 'traceflow', // Optional (default: 'traceflow')
   },
   'my-service'
 );
@@ -196,8 +224,9 @@ Or pass the Kafka instance:
 ```typescript
 const client = new TraceFlowClient(
   {
-    topic: 'ota-jobs',
-    kafka: kafka, // Pass the Kafka instance
+    kafka,
+    producer,
+    // topic: 'traceflow', // Optional (default: 'traceflow')
   },
   'my-service'
 );
@@ -243,9 +272,30 @@ await trace.updateJob({
 });
 ```
 
-### 4. Adding Steps
+### 4. Working with Steps
 
-#### Auto-increment (Recommended)
+#### Step Class (Recommended)
+
+The `step()` method returns a `Step` instance with its own methods:
+
+```typescript
+// Create a step - returns Step instance
+const step = await trace.step({
+  name: 'Fetch Data',
+  step_type: 'fetch',
+  input: { endpoint: '/api/bookings' },
+});
+
+// Use Step methods directly
+await step.info('Fetching data...');
+await step.update({ metadata: { progress: '50%' } });
+await step.finish({ records_fetched: 100 });
+
+// Or fail the step
+// await step.fail('Connection timeout');
+```
+
+#### Auto-increment Step Numbers
 
 Steps are automatically numbered starting from 0:
 
@@ -254,7 +304,6 @@ Steps are automatically numbered starting from 0:
 const step1 = await trace.step({
   name: 'Fetch Data',
   step_type: 'fetch',
-  input: { endpoint: '/api/bookings' },
 });
 
 // Step 1 (auto-incremented!)
@@ -270,7 +319,26 @@ const step3 = await trace.step({
 });
 ```
 
-#### Manual Numbering
+#### Auto-Close Steps Option
+
+Enable automatic closing of previous steps:
+
+```typescript
+const trace = await client.trace(
+  { job_type: 'sync' },
+  { autoCloseSteps: true } // Enable auto-close
+);
+
+const step1 = await trace.step({ name: 'Fetch' });
+// Don't manually close step1
+
+const step2 = await trace.step({ name: 'Process' });
+// step1 is automatically closed (completed) when step2 is created!
+
+await step2.finish();
+```
+
+#### Manual Step Numbering
 
 You can also manually specify step numbers:
 
@@ -287,31 +355,38 @@ const nextStep = await trace.step({
 }); // step_number: 11
 ```
 
-#### Finishing and Managing Steps
-
-```typescript
-// Finish successfully (utility method)
-await trace.finishStep(step1, {
-  records_processed: 150,
-  duration_ms: 1234,
-});
-
-// Or use completeStep (same as finishStep)
-await trace.completeStep(step1, { result: 'success' });
-
-// Fail a step
-await trace.failStep(step2, 'Connection timeout');
-
-// Update a step
-await trace.updateStep(step1, {
-  status: TraceFlowStepStatus.IN_PROGRESS,
-  metadata: { progress: '75%' },
-});
-```
-
 ### 5. Logging
 
+#### Step-Level Logging (Recommended)
+
+Use the `Step` instance to add logs:
+
+```typescript
+const step = await trace.step({ name: 'Process Data' });
+
+// Use Step logging methods
+await step.info('Processing started');
+await step.debug('Config loaded', { config: 'value' });
+await step.warn('Slow response', { response_time: 3500 });
+await step.error('Error occurred', { error_code: 'ERR_001' });
+
+await step.finish({ processed: 100 });
+```
+
+#### Trace-Level Logging
+
+You can also log at the trace level:
+
+```typescript
+await trace.info('Trace started successfully');
+await trace.warn('API response slow', { response_time: 3500 });
+await trace.error('Connection failed', { error_code: 'CONN_ERR' });
+await trace.debug('Debug info', { state: 'processing' });
+```
+
 #### Generic Logs
+
+For more control:
 
 ```typescript
 await trace.log({
@@ -319,23 +394,8 @@ await trace.log({
   event_type: TraceFlowEventType.MESSAGE,
   message: 'Processing started',
   details: { batch_size: 100 },
-  step_number: step1, // optional: link to a step
+  step_number: step.getStepNumber(), // optional: link to a step
 });
-```
-
-#### Logging Helpers
-
-```typescript
-// Trace-level logs
-await trace.info('Trace started successfully');
-await trace.warn('API response slow', { response_time: 3500 });
-await trace.error('Connection failed', { error_code: 'CONN_ERR' });
-await trace.debug('Debug info', { state: 'processing' });
-
-// Step-linked logs
-await trace.info('Fetching data...', undefined, step1);
-await trace.warn('Partial data received', { expected: 100, received: 80 }, step1);
-await trace.error('Step failed', { reason: 'timeout' }, step1);
 ```
 
 ### 6. Finishing or Failing a Trace
@@ -372,109 +432,99 @@ await existingTrace.complete({ success: true });
 
 ## 📝 Complete Examples
 
-### Example 1: Sync with Retry Logic
+For comprehensive examples covering all use cases, see the **[Examples Documentation](./examples/README.md)**.
 
-```typescript
-const job = await client.createJob({
-  job_type: 'sync',
-  title: 'Sync with Retry',
-  metadata: { max_retries: '3' },
-});
+Available examples:
+- **[01-basic-usage.ts](./examples/01-basic-usage.ts)** - Getting started with TraceFlow
+- **[02-auto-close-steps.ts](./examples/02-auto-close-steps.ts)** - Auto-closing steps feature
+- **[03-singleton-pattern.ts](./examples/03-singleton-pattern.ts)** - Singleton pattern (recommended for production)
+- **[04-step-logging.ts](./examples/04-step-logging.ts)** - Comprehensive logging at all levels
+- **[05-error-handling.ts](./examples/05-error-handling.ts)** - Error handling and recovery
+- **[06-existing-kafka-instance.ts](./examples/06-existing-kafka-instance.ts)** - Using existing Kafka connections
+- **[07-complex-workflow.ts](./examples/07-complex-workflow.ts)** - Real-world ETL pipeline
 
-await job.updateJob({ status: TraceFlowJobStatus.RUNNING });
+### Running Examples
 
-const step = await job.createStep({
-  name: 'Fetch API',
-  step_type: 'fetch',
-});
+```bash
+# Run individual examples
+npx ts-node examples/01-basic-usage.ts
 
-let attempt = 0;
-const maxRetries = 3;
-
-for (attempt = 1; attempt <= maxRetries; attempt++) {
-  try {
-    await job.info(`Attempt ${attempt} of ${maxRetries}`, { attempt }, step);
-
-    // Your code here...
-    const data = await fetchExternalAPI();
-
-    await job.completeStep(step, { success: true, attempts: attempt });
-    break;
-  } catch (error: any) {
-    await job.warn(`Attempt ${attempt} failed`, { attempt, error: error.message }, step);
-
-    if (attempt === maxRetries) {
-      await job.failStep(step, 'Max retries exceeded');
-      await job.failJob('Sync failed after all retries');
-      return;
-    }
-
-    const delay = Math.pow(2, attempt) * 1000;
-    await new Promise((resolve) => setTimeout(resolve, delay));
-  }
-}
-
-await job.completeJob({ success: true });
+# Run all examples
+npx ts-node examples/index.ts
 ```
 
-### Example 2: Complex Workflow
+See **[Examples README](./examples/README.md)** for detailed documentation.
+
+---
+
+## 🎯 Quick Example: ETL Pipeline
 
 ```typescript
-const job = await client.createJob({
-  job_type: 'import',
-  title: 'Complex Data Import',
-});
+import { initializeTraceFlow } from '@dev.smartpricing/traceflow-sdk';
 
-await job.updateJob({ status: TraceFlowJobStatus.RUNNING });
+// Initialize once
+const client = initializeTraceFlow({ brokers: ['localhost:9092'] });
+await client.connect();
 
-// Phase 1: Download
-const downloadStep = await job.createStep({
-  name: 'Download CSV',
-  step_type: 'download',
-});
+// Create trace with auto-close steps
+const trace = await client.trace(
+  { 
+    job_type: 'etl',
+    title: 'Daily Data Pipeline',
+  },
+  { autoCloseSteps: true } // Automatic step management
+);
 
-await job.info('Starting download...', undefined, downloadStep);
-const fileData = await downloadFile();
-await job.completeStep(downloadStep, { file_size: fileData.size });
+await trace.start();
 
-// Phase 2: Validation
-const validateStep = await job.createStep({
-  name: 'Validate Data',
-  step_type: 'validation',
-});
+// Steps auto-close when creating the next one
+const extract = await trace.step({ name: 'Extract' });
+await extract.info('Extracting 1000 records...');
 
-const validation = await validateData(fileData);
-if (!validation.valid) {
-  await job.error('Validation failed', validation.errors, validateStep);
-  await job.failStep(validateStep, 'Invalid data format');
-  await job.failJob('Import aborted due to validation errors');
-  return;
-}
+const transform = await trace.step({ name: 'Transform' });
+// extract is auto-closed here!
+await transform.info('Transforming data...');
 
-await job.completeStep(validateStep, { records_validated: validation.count });
+const load = await trace.step({ name: 'Load' });
+// transform is auto-closed here!
+await load.info('Loading to warehouse...');
 
-// Phase 3: Import
-const importStep = await job.createStep({
-  name: 'Import to Database',
-  step_type: 'import',
-});
+// Finish trace - all pending steps auto-closed
+await trace.finish({ records: 1000 });
 
-let imported = 0;
-for (const batch of validation.batches) {
-  await importBatch(batch);
-  imported += batch.length;
-  await job.info(`Imported ${imported} records`, { imported, total: validation.count }, importStep);
-}
+await client.disconnect();
+```
 
-await job.completeStep(importStep, { imported });
+---
 
-// Complete
-await job.completeJob({
-  total_imported: imported,
-  file_size: fileData.size,
-  duration_ms: Date.now() - startTime,
+## 🔧 Configuration
+
+### Kafka Configuration
+
+```typescript
+const client = new TraceFlowClient({
+  brokers: ['broker1:9092', 'broker2:9092'],
+  // topic: 'traceflow', // Optional (default: 'traceflow')
+  clientId: 'my-service',
+  
+  // Optional: SSL/TLS
+  ssl: {
+    rejectUnauthorized: false,
+    ca: [fs.readFileSync('/path/to/ca-cert', 'utf-8')],
+    key: fs.readFileSync('/path/to/client-key', 'utf-8'),
+    cert: fs.readFileSync('/path/to/client-cert', 'utf-8'),
+  },
+  
+  // Optional: SASL Authentication
+  sasl: {
+    mechanism: 'plain',
+    username: 'my-username',
+    password: 'my-password',
+  },
 });
 ```
+
+---
 
 ## 🔧 API Reference
 
@@ -531,13 +581,31 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 
 #### Step Methods
 
-- `step(options?: CreateStepOptions): Promise<number>` - Add a step (with auto-increment)
-- `updateStep(stepNumber: number, options?: UpdateStepOptions): Promise<void>` - Update step
-- `finishStep(stepNumber: number, output?: any): Promise<void>` - Finish step successfully
-- `completeStep(stepNumber: number, output?: any): Promise<void>` - Complete step (same as finishStep)
-- `failStep(stepNumber: number, error: string): Promise<void>` - Fail step
-- `traceStep(options?: CreateStepOptions): Promise<number>` - Alias for step() (deprecated)
-- `createStep(options?: CreateStepOptions): Promise<number>` - Alias for step() (deprecated)
+- `step(options?: CreateStepOptions): Promise<Step>` - Add a step (returns Step instance)
+- `updateStep(stepNumber: number, options?: UpdateStepOptions): Promise<void>` - Update step (legacy)
+- `finishStep(stepNumber: number, output?: any): Promise<void>` - Finish step (legacy)
+- `completeStep(stepNumber: number, output?: any): Promise<void>` - Complete step (legacy)
+- `failStep(stepNumber: number, error: string): Promise<void>` - Fail step (legacy)
+- `traceStep(options?: CreateStepOptions): Promise<Step>` - Alias for step() (deprecated)
+- `createStep(options?: CreateStepOptions): Promise<Step>` - Alias for step() (deprecated)
+
+### Step
+
+The `Step` class represents a single step in a trace.
+
+#### Methods
+
+- `getStepNumber(): number` - Get step number
+- `isClosed(): boolean` - Check if step is closed (completed/failed)
+- `update(options: UpdateStepOptions): Promise<void>` - Update step
+- `complete(output?: any): Promise<void>` - Complete step successfully
+- `finish(output?: any): Promise<void>` - Finish step (alias for complete)
+- `fail(error: string): Promise<void>` - Fail step
+- `log(message: string, level: LogLevel, details?: any): Promise<void>` - Add log
+- `info(message: string, details?: any): Promise<void>` - INFO log
+- `warn(message: string, details?: any): Promise<void>` - WARN log
+- `error(message: string, details?: any): Promise<void>` - ERROR log
+- `debug(message: string, details?: any): Promise<void>` - DEBUG log
 
 #### Log Methods
 

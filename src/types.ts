@@ -49,7 +49,7 @@ export enum TraceFlowEventType {
  */
 export interface TraceFlowKafkaConfig {
   brokers: string[];
-  topic: string;
+  topic?: string; // Optional - defaults to 'traceflow'
   clientId?: string;
   sasl?: {
     mechanism: 'plain' | 'scram-sha-256' | 'scram-sha-512';
@@ -63,7 +63,7 @@ export interface TraceFlowKafkaConfig {
  * Kafka instance configuration - use existing Kafka or Producer instance
  */
 export interface TraceFlowKafkaInstanceConfig {
-  topic: string;
+  topic?: string; // Optional - defaults to 'traceflow'
   kafka?: any; // Kafka instance from @confluentinc/kafka-javascript
   producer?: any; // Producer instance from @confluentinc/kafka-javascript
 }
@@ -86,6 +86,17 @@ export interface CreateJobOptions {
   tags?: string[];
   metadata?: Record<string, string>;
   params?: any;
+}
+
+/**
+ * Trace options for managing trace behavior
+ */
+export interface TraceOptions {
+  /**
+   * Automatically close (complete) the previous step when a new step is created
+   * Default: false
+   */
+  autoCloseSteps?: boolean;
 }
 
 /**

@@ -6,9 +6,9 @@
 export { TraceFlowClient } from './client';
 export { TraceManager } from './trace-manager';
 export { Step } from './step';
-export { TraceFlowServiceClient } from './service-client';
+export { TraceFlowRedisClient } from './redis-client';
 export { TraceCleaner } from './trace-cleaner';
-export type { TraceState, StepState } from './service-client';
+export type { TraceState, StepState } from './redis-client';
 export type { TraceCleanerConfig } from './trace-cleaner';
 
 // Re-export singleton methods for convenience

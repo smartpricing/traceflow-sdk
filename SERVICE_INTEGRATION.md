@@ -1,6 +1,6 @@
-# TraceFlow SDK - Integration with TraceFlow Service
+# TraceFlow SDK - Redis Integration Guide
 
-This guide explains how to integrate the SDK with your existing `traceflow-service` for state persistence and recovery.
+This guide explains how to integrate Redis for state persistence and automatic cleanup of inactive traces.
 
 ## 🎯 Problem Solved
 
@@ -10,69 +10,92 @@ Without persistent state:
 - ❌ Step numbering resets
 - ❌ No timeout/cleanup
 
-With traceflow-service integration:
-- ✅ State persists in Scylla
+With Redis integration:
+- ✅ State persists in Redis
 - ✅ Resume traces after pod restart
 - ✅ Query trace/step state
-- ✅ Automatic cleanup possible
+- ✅ Automatic cleanup of inactive traces
 
 ---
 
 ## 📋 Prerequisites
 
-Your `traceflow-service` should expose REST API endpoints:
+- **Redis Server**: Version 6.0+ recommended
+- **TraceFlow Service**: Kafka consumer that persists messages to ScyllaDB
+- **Kafka**: For message passing between SDK and service
 
-```typescript
-// GET /api/traces/:traceId
-// Response: TraceState
+---
 
-// GET /api/traces/:traceId/steps
-// Response: StepState[]
+## 🏗️ Architecture
 
-// GET /api/traces/:traceId/steps/:stepNumber
-// Response: StepState
-
-// GET /api/traces/inactive?seconds=1800&minutes=30&statuses=IN_PROGRESS&limit=100
-// Response: { traces: InactiveTrace[] }
-// For TraceCleaner - returns traces inactive for specified time
-// Parameters:
-//   - seconds: inactivity timeout in seconds (required by SDK)
-//   - minutes: alternative to seconds (optional, service can support both)
-//   - statuses: comma-separated list of statuses to filter (optional)
-//   - limit: max number of traces to return (optional)
-
-// GET /api/traces/:traceId/steps/inactive?seconds=1800&minutes=30&statuses=IN_PROGRESS
-// Response: { steps: InactiveStep[] }
-// For TraceCleaner - returns inactive steps for a trace
-// Parameters:
-//   - seconds: inactivity timeout in seconds (required by SDK)
-//   - minutes: alternative to seconds (optional, service can support both)
-//   - statuses: comma-separated list of statuses to filter (optional)
 ```
+┌─────────────────┐
+│   Your Service  │
+│   (SDK Client)  │
+└────────┬────────┘
+         │
+         ├──► Kafka Topic 'traceflow'
+         │    (send messages)
+         │
+         └──► Redis
+              (persist state)
+              
+                    ↓
+              
+         ┌──────────────────┐
+         │ TraceFlow Service│
+         │ (Kafka Consumer) │
+         └────────┬─────────┘
+                  │
+                  └──► ScyllaDB
+                       (persist events)
+```
+
+**Key Points:**
+- SDK sends messages to Kafka (events)
+- SDK persists state to Redis (recovery)
+- TraceFlow Service consumes Kafka and writes to ScyllaDB (historical data)
 
 ---
 
 ## 🔧 SDK Configuration
 
-### Option 1: With Service URL (Recommended for Production)
+### Option 1: With Redis URL
 
 ```typescript
 import { TraceFlowClient } from '@dev.smartpricing/traceflow-sdk';
 
 const client = new TraceFlowClient({
   brokers: ['localhost:9092'],
-  serviceUrl: 'http://traceflow-service:3000/api', // ← Add this
+  redisUrl: 'redis://localhost:6379', // ← Add this for state persistence
 }, 'my-service');
 
 await client.connect();
 ```
 
-### Option 2: Without Service URL (Dev/Simple Use Cases)
+### Option 2: With Existing Redis Client
+
+```typescript
+import { createClient } from 'redis';
+import { TraceFlowClient } from '@dev.smartpricing/traceflow-sdk';
+
+const redisClient = createClient({ url: 'redis://localhost:6379' });
+await redisClient.connect();
+
+const client = new TraceFlowClient({
+  brokers: ['localhost:9092'],
+  redisClient, // Use existing Redis client
+}, 'my-service');
+
+await client.connect();
+```
+
+### Option 3: Without Redis (Dev/Simple Use Cases)
 
 ```typescript
 const client = new TraceFlowClient({
   brokers: ['localhost:9092'],
-  // No serviceUrl - no state recovery
+  // No Redis - no state recovery, in-memory only
 }, 'my-service');
 ```
 
@@ -80,10 +103,10 @@ const client = new TraceFlowClient({
 
 ## 📝 Usage Examples
 
-### Example 1: Basic Usage (No Changes Needed)
+### Example 1: Basic Usage (Automatic State Persistence)
 
 ```typescript
-// Works the same with or without service
+// Redis configured - state automatically persisted
 const trace = await client.trace({ trace_type: 'sync' });
 await trace.start();
 
@@ -91,14 +114,20 @@ const step = await trace.step({ name: 'Process' });
 await step.finish();
 
 await trace.finish();
+
+// State is in Redis! No extra code needed.
 ```
 
 ### Example 2: Resume After Pod Restart
 
 ```typescript
 // === POD 1 (before crash) ===
-const trace = await client.trace({ trace_type: 'etl', title: 'ETL Trace' });
-const traceId = trace.getId(); // Save this somewhere (env, redis, etc.)
+const trace = await client.trace({ trace_type: 'etl', title: 'ETL Job' });
+const traceId = trace.getId(); 
+
+// Save trace ID somewhere accessible after restart
+// (environment variable, file, external Redis key, etc.)
+process.env.CURRENT_TRACE_ID = traceId;
 
 await trace.start();
 const step1 = await trace.step({ name: 'Extract' });
@@ -107,44 +136,49 @@ const step1 = await trace.step({ name: 'Extract' });
 // === POD 2 (after restart) ===
 const client = new TraceFlowClient({
   brokers: ['localhost:9092'],
-  serviceUrl: 'http://traceflow-service:3000/api',
+  redisUrl: 'redis://localhost:6379',
 }, 'my-service');
 
 await client.connect();
 
 // Resume the trace
+const traceId = process.env.CURRENT_TRACE_ID;
 const trace = client.getTrace(traceId);
 
-// Initialize step numbering from service
-await trace.initializeFromService();
+// Initialize step numbering from Redis
+await trace.initializeFromRedis();
 
 // Continue where we left off
 const step2 = await trace.step({ name: 'Transform' });
 await step2.finish();
+
+await trace.finish();
 ```
 
-### Example 3: Check Step State from Service
+### Example 3: Check State from Redis
 
 ```typescript
 const client = new TraceFlowClient({
   brokers: ['localhost:9092'],
-  serviceUrl: 'http://traceflow-service:3000/api',
-});
+  redisUrl: 'redis://localhost:6379',
+}, 'my-service');
 
-// Check if service is configured
-if (client.hasServiceClient()) {
-  const serviceClient = client.getServiceClient()!;
+await client.connect();
+
+// Check if Redis is configured
+if (client.hasRedisClient()) {
+  const redisClient = client.getRedisClient()!;
   
   // Get trace state
-  const traceState = await serviceClient.getTrace('trace-uuid');
+  const traceState = await redisClient.getTrace('trace-uuid');
   console.log(`Trace status: ${traceState?.status}`);
   
   // Get all steps
-  const steps = await serviceClient.getSteps('trace-uuid');
+  const steps = await redisClient.getSteps('trace-uuid');
   console.log(`Found ${steps.length} steps`);
   
   // Check if specific step is closed
-  const isClosed = await serviceClient.isStepClosed('trace-uuid', 0);
+  const isClosed = await redisClient.isStepClosed('trace-uuid', 0);
   console.log(`Step 0 closed: ${isClosed}`);
 }
 ```
@@ -154,14 +188,16 @@ if (client.hasServiceClient()) {
 ```typescript
 // After pod restart, resume trace
 const trace = client.getTrace(savedTraceId);
-await trace.initializeFromService();
+await trace.initializeFromRedis();
 
-// Get service client
-const serviceClient = client.getServiceClient()!;
+// Get Redis client
+const redisClient = client.getRedisClient()!;
 
 // Find all open steps
-const steps = await serviceClient.getSteps(savedTraceId);
-const openSteps = steps.filter(s => s.status === 'STARTED' || s.status === 'IN_PROGRESS');
+const steps = await redisClient.getSteps(savedTraceId);
+const openSteps = steps.filter(s => 
+  s.status === 'STARTED' || s.status === 'IN_PROGRESS'
+);
 
 // Complete them
 for (const openStep of openSteps) {
@@ -176,316 +212,9 @@ await trace.finish();
 
 ---
 
-## 🏗️ Required traceflow-service API
-
-Your `traceflow-service` needs these endpoints:
-
-### GET /api/traces/:traceId
-
-```typescript
-// Response
-{
-  trace_id: string;
-  trace_type?: string;
-  status: string;
-  source?: string;
-  created_at: string;
-  updated_at: string;
-  started_at?: string;
-  finished_at?: string;
-  last_activity_at?: string;
-  // ... other fields
-}
-```
-
-### GET /api/traces/:traceId/steps
-
-```typescript
-// Response
-[
-  {
-    trace_id: string;
-    step_number: number;
-    step_id: string;
-    name?: string;
-    status: string;
-    started_at: string;
-    updated_at: string;
-    finished_at?: string;
-    last_activity_at?: string;
-  },
-  // ... more steps
-]
-```
-
-### GET /api/traces/:traceId/steps/:stepNumber
-
-```typescript
-// Response
-{
-  trace_id: string;
-  step_number: number;
-  step_id: string;
-  status: string;
-  // ... other fields
-}
-```
-
----
-
-## 🔄 Recommended Architecture
-
-```
-┌─────────────────┐
-│   Your Service  │
-│   (SDK Client)  │
-└────────┬────────┘
-         │
-         ├──► Kafka Topic 'traceflow'
-         │    (send messages)
-         │
-         └──► TraceFlow Service API
-              (query state)
-              
-                    │
-                    ├──► Kafka Consumer
-                    │    (read messages)
-                    │
-                    └──► ScyllaDB
-                         (persist state)
-```
-
----
-
-## 🛠️ Implementation Steps
-
-### Step 1: Add REST API to traceflow-service
-
-```typescript
-// traceflow-service/src/api/routes.ts
-import express from 'express';
-
-const router = express.Router();
-
-// Get trace by ID
-router.get('/traces/:traceId', async (req, res) => {
-  const { traceId } = req.params;
-  
-  const query = 'SELECT * FROM traces WHERE trace_id = ?';
-  const result = await cassandra.execute(query, [traceId]);
-  
-  if (result.rowLength === 0) {
-    return res.status(404).json({ error: 'Trace not found' });
-  }
-  
-  res.json(result.first());
-});
-
-// Get steps for trace
-router.get('/traces/:traceId/steps', async (req, res) => {
-  const { traceId } = req.params;
-  
-  const query = 'SELECT * FROM steps WHERE trace_id = ? ORDER BY step_number ASC';
-  const result = await cassandra.execute(query, [traceId]);
-  
-  res.json(result.rows);
-});
-
-// Get specific step
-router.get('/traces/:traceId/steps/:stepNumber', async (req, res) => {
-  const { traceId, stepNumber } = req.params;
-  
-  const query = 'SELECT * FROM steps WHERE trace_id = ? AND step_number = ?';
-  const result = await cassandra.execute(query, [traceId, parseInt(stepNumber)]);
-  
-  if (result.rowLength === 0) {
-    return res.status(404).json({ error: 'Step not found' });
-  }
-  
-  res.json(result.first());
-});
-
-// Get inactive traces (for TraceCleaner)
-router.get('/traces/inactive', async (req, res) => {
-  const { seconds, minutes, statuses, limit } = req.query;
-  
-  // Calculate timeout from seconds or minutes
-  let timeoutMs;
-  if (seconds) {
-    timeoutMs = parseInt(seconds) * 1000;
-  } else if (minutes) {
-    timeoutMs = parseInt(minutes) * 60 * 1000;
-  } else {
-    timeoutMs = 1800 * 1000; // Default: 30 minutes
-  }
-  
-  const inactivityThreshold = new Date(Date.now() - timeoutMs);
-  
-  // Parse statuses filter (default: IN_PROGRESS)
-  const statusFilter = statuses ? statuses.split(',') : ['IN_PROGRESS'];
-  
-  // Parse limit (default: 100)
-  const maxLimit = limit ? parseInt(limit) : 100;
-  
-  // Find traces that haven't been updated recently
-  const query = `
-    SELECT trace_id, trace_name, updated_at, metadata, status
-    FROM traces
-    WHERE status IN ?
-    AND updated_at < ?
-    LIMIT ?
-    ALLOW FILTERING
-  `;
-  
-  const result = await cassandra.execute(query, [
-    statusFilter,
-    inactivityThreshold,
-    maxLimit,
-  ]);
-  
-  res.json({ traces: result.rows });
-});
-
-// Get inactive steps for a trace (for TraceCleaner)
-router.get('/traces/:traceId/steps/inactive', async (req, res) => {
-  const { traceId } = req.params;
-  const { seconds, minutes, statuses } = req.query;
-  
-  // Calculate timeout from seconds or minutes
-  let timeoutMs;
-  if (seconds) {
-    timeoutMs = parseInt(seconds) * 1000;
-  } else if (minutes) {
-    timeoutMs = parseInt(minutes) * 60 * 1000;
-  } else {
-    timeoutMs = 1800 * 1000; // Default: 30 minutes
-  }
-  
-  const inactivityThreshold = new Date(Date.now() - timeoutMs);
-  
-  // Parse statuses filter (default: IN_PROGRESS)
-  const statusFilter = statuses ? statuses.split(',') : ['IN_PROGRESS'];
-  
-  const query = `
-    SELECT trace_id, step_number, step_name, status, updated_at
-    FROM steps
-    WHERE trace_id = ?
-    AND status IN ?
-    AND updated_at < ?
-    ALLOW FILTERING
-  `;
-  
-  const result = await cassandra.execute(query, [
-    traceId,
-    statusFilter,
-    inactivityThreshold,
-  ]);
-  
-  res.json({ steps: result.rows });
-});
-
-export default router;
-```
-
-### Step 2: Update Your Service Configuration
-
-```typescript
-// your-service/config.ts
-const config = {
-  traceflow: {
-    brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'],
-    serviceUrl: process.env.TRACEFLOW_SERVICE_URL || 'http://traceflow-service:3000/api',
-  },
-};
-
-// your-service/tracing.ts
-import { initializeTraceFlow } from '@dev.smartpricing/traceflow-sdk';
-
-export const initTracing = async () => {
-  const client = initializeTraceFlow(config.traceflow, 'my-service');
-  await client.connect();
-  return client;
-};
-```
-
-### Step 3: Handle Pod Restart
-
-```typescript
-// your-service/index.ts
-import { initTracing } from './tracing';
-
-async function bootstrap() {
-  const tracingClient = await initTracing();
-  
-  // Store current trace IDs in Redis or environment
-  // So you can resume them after restart
-  
-  // Check for existing traces to resume
-  const existingTraceId = process.env.RESUME_TRACE_ID;
-  
-  if (existingTraceId && tracingClient.hasServiceClient()) {
-    console.log('Resuming trace:', existingTraceId);
-    
-    const trace = tracingClient.getTrace(existingTraceId);
-    await trace.initializeFromService();
-    
-    // Continue processing...
-  }
-}
-```
-
----
-
-## 🎯 Best Practices
-
-### 1. Always Initialize from Service When Resuming
-
-```typescript
-const trace = client.getTrace(traceId);
-await trace.initializeFromService(); // ← Important!
-```
-
-### 2. Check Service Availability
-
-```typescript
-if (client.hasServiceClient()) {
-  // Safe to use service features
-  await trace.initializeFromService();
-} else {
-  // Fall back to in-memory only
-  console.warn('Service not configured, state will not persist');
-}
-```
-
-### 3. Store Trace IDs for Recovery
-
-```typescript
-// Option A: Environment variable
-process.env.CURRENT_TRACE_ID = trace.getId();
-
-// Option B: Redis
-await redis.set('current_trace', trace.getId(), 'EX', 3600);
-
-// Option C: File (simple but works)
-fs.writeFileSync('/tmp/current_trace.txt', trace.getId());
-```
-
-### 4. Handle Service Errors Gracefully
-
-```typescript
-try {
-  await trace.initializeFromService();
-} catch (error) {
-  console.warn('Failed to initialize from service:', error);
-  // Continue with in-memory state
-}
-```
-
----
-
 ## 🧹 Automatic Cleanup Integration
 
-The SDK includes an integrated cleaner that automatically closes inactive traces. This requires the service integration.
+The SDK includes an integrated cleaner that automatically closes inactive traces stored in Redis.
 
 ### Setup Pattern
 
@@ -501,7 +230,7 @@ import { initializeTraceFlow } from '@dev.smartpricing/traceflow-sdk';
 
 const client = initializeTraceFlow({
   brokers: ['localhost:9092'],
-  serviceUrl: 'http://traceflow-service:3000',
+  redisUrl: 'redis://localhost:6379',
   // NO cleanerConfig - cleaner disabled
 }, 'main-service');
 
@@ -519,7 +248,7 @@ import { initializeTraceFlow } from '@dev.smartpricing/traceflow-sdk';
 
 const client = initializeTraceFlow({
   brokers: ['localhost:9092'],
-  serviceUrl: 'http://traceflow-service:3000', // Required!
+  redisUrl: 'redis://localhost:6379', // Required!
   cleanerConfig: {
     inactivityTimeoutSeconds: 1800,  // Close after 30 minutes
     cleanupIntervalSeconds: 300,     // Run every 5 minutes
@@ -552,34 +281,54 @@ services:
     build: ./main-service
     environment:
       - KAFKA_BROKERS=kafka:9092
-      - TRACEFLOW_SERVICE_URL=http://traceflow-service:3000
+      - REDIS_URL=redis://redis:6379
     depends_on:
       - kafka
-      - traceflow-service
+      - redis
 
   # Cron service - cleanup only
   cron-cleaner:
     build: ./cron-service
     environment:
       - KAFKA_BROKERS=kafka:9092
-      - TRACEFLOW_SERVICE_URL=http://traceflow-service:3000
+      - REDIS_URL=redis://redis:6379
       - CLEANUP_TIMEOUT_SECONDS=1800
       - CLEANUP_INTERVAL_SECONDS=300
     depends_on:
       - kafka
-      - traceflow-service
+      - redis
 
-  # TraceFlow service - API + Kafka consumer
+  # TraceFlow service - Kafka consumer → ScyllaDB
   traceflow-service:
     build: ./traceflow-service
     environment:
       - KAFKA_BROKERS=kafka:9092
       - SCYLLA_HOSTS=scylla:9042
-    ports:
-      - "3000:3000"
     depends_on:
       - kafka
       - scylla
+
+  # Redis for state
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  # Kafka
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    # ... kafka config ...
+
+  # ScyllaDB
+  scylla:
+    image: scylladb/scylla:latest
+    # ... scylla config ...
+
+volumes:
+  redis-data:
 ```
 
 ### Environment-Based Configuration
@@ -589,7 +338,7 @@ const isCronService = process.env.SERVICE_TYPE === 'cron';
 
 const client = initializeTraceFlow({
   brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'],
-  serviceUrl: process.env.TRACEFLOW_SERVICE_URL,
+  redisUrl: process.env.REDIS_URL,
   // Only enable cleaner in cron service
   ...(isCronService && {
     cleanerConfig: {
@@ -599,6 +348,8 @@ const client = initializeTraceFlow({
     },
   }),
 }, process.env.SERVICE_NAME || 'service');
+
+await client.connect();
 ```
 
 ### Manual Control (Advanced)
@@ -606,7 +357,7 @@ const client = initializeTraceFlow({
 ```typescript
 const client = initializeTraceFlow({
   brokers: ['localhost:9092'],
-  serviceUrl: 'http://traceflow-service:3000',
+  redisUrl: 'redis://localhost:6379',
   cleanerConfig: {
     inactivityTimeoutSeconds: 1800,
     cleanupIntervalSeconds: 300,
@@ -631,57 +382,274 @@ cleaner?.stop();
 
 ---
 
+## 📊 Redis Data Structure
+
+The SDK stores data in Redis using these key patterns:
+
+### Trace State
+
+**Key:** `trace:{trace_id}`  
+**Type:** Hash
+
+```
+HGETALL trace:abc-123
+{
+  trace_id: "abc-123",
+  trace_type: "sync",
+  status: "RUNNING",
+  source: "my-service",
+  created_at: "2024-01-01T10:00:00Z",
+  updated_at: "2024-01-01T10:05:00Z",
+  last_activity_at: "2024-01-01T10:05:00Z",
+  title: "Data Sync",
+  ...
+}
+```
+
+### Step State
+
+**Key:** `trace:{trace_id}:step:{step_number}`  
+**Type:** Hash
+
+```
+HGETALL trace:abc-123:step:0
+{
+  trace_id: "abc-123",
+  step_number: "0",
+  step_id: "def-456",
+  name: "Process Data",
+  status: "COMPLETED",
+  started_at: "2024-01-01T10:01:00Z",
+  finished_at: "2024-01-01T10:05:00Z",
+  last_activity_at: "2024-01-01T10:05:00Z",
+  ...
+}
+```
+
+### Activity Tracking (for Cleaner)
+
+**Traces Activity:**  
+**Key:** `traces:activity`  
+**Type:** Sorted Set  
+**Score:** Timestamp of `last_activity_at`  
+**Value:** `trace_id`
+
+```
+ZRANGE traces:activity 0 -1 WITHSCORES
+```
+
+**Steps Activity:**  
+**Key:** `trace:{trace_id}:steps:activity`  
+**Type:** Sorted Set  
+**Score:** Timestamp of `last_activity_at`  
+**Value:** `step_number`
+
+---
+
+## 🔄 How TraceCleaner Works
+
+1. **Periodic Check**: Runs every `cleanupIntervalSeconds` (default: 300s)
+2. **Query Redis**: Gets traces with `last_activity_at` older than `inactivityTimeoutSeconds` (default: 1800s)
+3. **For Each Inactive Trace**:
+   - Query Redis for open steps
+   - Send Kafka message to close each step (status: FAILED)
+   - Send Kafka message to close trace (status: FAILED)
+4. **Logging**: Detailed logs for debugging
+
+---
+
+## 🛠️ Implementation Steps
+
+### Step 1: Add Redis to Your Infrastructure
+
+```bash
+# Docker
+docker run -d --name redis -p 6379:6379 redis:7-alpine redis-server --appendonly yes
+
+# Or use Docker Compose (see example above)
+```
+
+### Step 2: Update Your Service Configuration
+
+```typescript
+// your-service/config.ts
+const config = {
+  traceflow: {
+    brokers: process.env.KAFKA_BROKERS?.split(',') || ['localhost:9092'],
+    redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  },
+};
+
+// your-service/tracing.ts
+import { initializeTraceFlow } from '@dev.smartpricing/traceflow-sdk';
+
+export const initTracing = async () => {
+  const client = initializeTraceFlow(config.traceflow, 'my-service');
+  await client.connect();
+  return client;
+};
+```
+
+### Step 3: Handle Pod Restart
+
+```typescript
+// your-service/index.ts
+import { initTracing } from './tracing';
+import Redis from 'ioredis'; // or 'redis'
+
+async function bootstrap() {
+  const tracingClient = await initTracing();
+  
+  // Store current trace ID in external Redis (not SDK Redis)
+  // So you can resume after restart
+  const externalRedis = new Redis(process.env.REDIS_URL);
+  
+  // Check for existing traces to resume
+  const existingTraceId = await externalRedis.get('current_trace_id');
+  
+  if (existingTraceId && tracingClient.hasRedisClient()) {
+    console.log('Resuming trace:', existingTraceId);
+    
+    const trace = tracingClient.getTrace(existingTraceId);
+    await trace.initializeFromRedis();
+    
+    // Continue processing...
+  }
+}
+```
+
+---
+
+## 🎯 Best Practices
+
+### 1. Always Initialize from Redis When Resuming
+
+```typescript
+const trace = client.getTrace(traceId);
+await trace.initializeFromRedis(); // ← Important!
+```
+
+### 2. Check Redis Availability
+
+```typescript
+if (client.hasRedisClient()) {
+  // Safe to use Redis features
+  await trace.initializeFromRedis();
+} else {
+  // Fall back to in-memory only
+  console.warn('Redis not configured, state will not persist');
+}
+```
+
+### 3. Store Trace IDs for Recovery
+
+```typescript
+// Option A: Environment variable
+process.env.CURRENT_TRACE_ID = trace.getId();
+
+// Option B: External Redis
+await externalRedis.set('current_trace', trace.getId(), 'EX', 3600);
+
+// Option C: File (simple but works)
+fs.writeFileSync('/tmp/current_trace.txt', trace.getId());
+```
+
+### 4. Handle Redis Errors Gracefully
+
+```typescript
+try {
+  await trace.initializeFromRedis();
+} catch (error) {
+  console.warn('Failed to initialize from Redis:', error);
+  // Continue with in-memory state
+}
+```
+
+### 5. Use Separate Redis for SDK vs Application
+
+```typescript
+// SDK Redis (managed by SDK)
+const client = new TraceFlowClient({
+  brokers: ['localhost:9092'],
+  redisUrl: 'redis://localhost:6379/0', // DB 0 for SDK
+});
+
+// Your application Redis
+const appRedis = new Redis('redis://localhost:6379/1'); // DB 1 for app
+```
+
+---
+
 ## 🚀 Migration Guide
 
-### If you're currently using the SDK without service:
+### If you're currently using the SDK without Redis:
 
-1. Add `serviceUrl` to your configuration
+1. Add `redisUrl` to your configuration
 2. Deploy updated code
 3. No breaking changes - works immediately
+4. Existing traces continue in-memory, new ones persist
 
 ### If you have existing traces:
 
-- Old traces (created without service) will continue working
-- New traces (created with service) will have state recovery
-- Gradually migrate by enabling `serviceUrl` in config
+- Old traces (created without Redis) will continue working in-memory
+- New traces (created with Redis) will have state recovery
+- Gradually migrate by enabling `redisUrl` in config
 
 ---
 
 ## 📊 Benefits Summary
 
-| Feature | Without Service | With Service |
-|---------|----------------|--------------|
+| Feature | Without Redis | With Redis |
+|---------|--------------|------------|
 | State persistence | ❌ | ✅ |
 | Pod restart recovery | ❌ | ✅ |
 | Query trace state | ❌ | ✅ |
-| Auto cleanup | ❌ | ✅ (service handles) |
+| Auto cleanup | ❌ | ✅ |
 | Multi-pod coordination | ❌ | ✅ |
-| Historical queries | ❌ | ✅ |
+| Step number recovery | ❌ | ✅ |
+
+---
+
+## 📈 Performance Considerations
+
+- **Redis Operations**: Non-blocking, async
+- **Overhead**: Minimal (~2-5ms per operation)
+- **Network**: Local Redis recommended for best performance
+- **Memory**: Redis memory usage depends on trace volume
+  - Average trace: ~1-2KB
+  - Average step: ~500B-1KB
+  - Use TTL or cleanup to manage memory
 
 ---
 
 ## 🔗 Related Documentation
 
-- [Examples README](./README.md)
-- [Main SDK README](../README.md)
-- [State Recovery Example](./09-state-recovery.ts)
+- [Main SDK README](./README.md)
+- [API Reference](./README.md#api-reference)
+- [TraceCleaner Documentation](./README.md#trace-cleaner)
 
 ---
 
 ## ❓ FAQ
 
 **Q: Do I need to change existing code?**  
-A: No, just add `serviceUrl` to config. Everything else works the same.
+A: No, just add `redisUrl` to config. Everything else works the same.
 
-**Q: What if service is down?**  
-A: SDK falls back to in-memory state. Warnings logged but no errors.
+**Q: What if Redis is down?**  
+A: SDK falls back to in-memory state. Warnings logged but no errors. Tracing continues.
 
-**Q: Can I use service for some traces but not others?**  
-A: Yes, configure per-client. Some clients with `serviceUrl`, others without.
+**Q: Can I use Redis for some traces but not others?**  
+A: Yes, configure per-client. Some clients with `redisUrl`, others without.
 
 **Q: Performance impact?**  
-A: Minimal. Service queries are optional and only when explicitly called (e.g., `initializeFromService()`).
+A: Minimal. Redis operations are async and non-blocking (~2-5ms overhead).
 
-**Q: Do I need service for development?**  
-A: No, omit `serviceUrl` in dev. Use it only in staging/production.
+**Q: Do I need Redis for development?**  
+A: No, omit `redisUrl` in dev. Use it only in staging/production.
+
+**Q: Can I use Redis Cluster?**  
+A: Yes, pass the cluster URL to `redisUrl`.
+
+**Q: How long does Redis keep the state?**  
+A: Indefinitely unless you set TTL or use the TraceCleaner to close inactive traces.
 

@@ -11,6 +11,8 @@ TypeScript SDK for sending trace tracking messages to Kafka. Provides a simple i
 - ✅ **Flexible Kafka** - Use configuration or existing Kafka instance
 - ✅ **Trace Manager** - Intuitive trace and step management via dedicated object
 - ✅ **Rich Metadata** - Support for tags, custom metadata, params and results
+- ✅ **Redis State Persistence** - Optional Redis integration for state recovery on pod restarts
+- ✅ **Automatic Cleanup** - Built-in cleaner for inactive traces with configurable timeouts
 
 ## 📦 Installation
 
@@ -110,6 +112,44 @@ await step2.finish({ records_transformed: 100 });
 await trace.finish({ total_records: 100, success: true });
 
 // Disconnect
+await client.disconnect();
+```
+
+### With Redis State Persistence
+
+Enable Redis to persist trace/step state for recovery after pod restarts:
+
+```typescript
+import { TraceFlowClient } from 'traceflow-sdk';
+
+const client = new TraceFlowClient(
+  {
+    brokers: ['localhost:9092'],
+    redisUrl: 'redis://localhost:6379', // Add Redis for state persistence
+  },
+  'my-service'
+);
+
+await client.connect();
+
+const trace = await client.trace({
+  trace_type: 'sync',
+  title: 'Data Sync',
+});
+
+// State is automatically persisted to Redis
+await trace.start();
+
+const step = await trace.step({ name: 'Process' });
+await step.finish();
+
+await trace.finish();
+
+// After pod restart, resume:
+const resumedTrace = client.getTrace(traceId);
+await resumedTrace.initializeFromRedis(); // Recover step numbers from Redis
+// Continue where you left off...
+
 await client.disconnect();
 ```
 
@@ -232,6 +272,66 @@ const client = new TraceFlowClient(
 );
 
 await client.connect();
+```
+
+#### With Redis State Persistence
+
+Add Redis to enable state persistence and recovery:
+
+```typescript
+import { TraceFlowClient } from 'traceflow-sdk';
+
+const client = new TraceFlowClient(
+  {
+    brokers: ['localhost:9092'],
+    clientId: 'my-app',
+    redisUrl: 'redis://localhost:6379', // Enable Redis persistence
+  },
+  'my-service'
+);
+
+await client.connect();
+```
+
+Or use an existing Redis client:
+
+```typescript
+import { createClient } from 'redis';
+
+const redisClient = createClient({ url: 'redis://localhost:6379' });
+await redisClient.connect();
+
+const client = new TraceFlowClient(
+  {
+    brokers: ['localhost:9092'],
+    redisClient, // Use existing Redis client
+  },
+  'my-service'
+);
+
+await client.connect();
+```
+
+#### With Automatic Cleanup (TraceCleaner)
+
+Enable automatic cleanup of inactive traces:
+
+```typescript
+const client = new TraceFlowClient(
+  {
+    brokers: ['localhost:9092'],
+    redisUrl: 'redis://localhost:6379', // Required for cleaner
+    cleanerConfig: {
+      inactivityTimeoutSeconds: 1800,  // Close traces inactive > 30 min
+      cleanupIntervalSeconds: 300,      // Check every 5 minutes
+      autoStart: true,                  // Start automatically on connect
+      logger: (msg, data) => console.log(msg, data), // Optional custom logger
+    },
+  },
+  'my-service'
+);
+
+await client.connect(); // Cleaner starts automatically
 ```
 
 ### 2. Starting a Trace

@@ -85,7 +85,8 @@ export interface TraceFlowKafkaConfig {
     password: string;
   };
   ssl?: boolean;
-  serviceUrl?: string; // Optional: TraceFlow Service API URL for state recovery
+  redisUrl?: string; // Optional: Redis URL for state persistence (e.g. 'redis://localhost:6379')
+  redisClient?: any; // Optional: Existing Redis client instance
   cleanerConfig?: TraceFlowCleanerConfig; // Optional: Auto-cleanup configuration
 }
 
@@ -96,7 +97,8 @@ export interface TraceFlowKafkaInstanceConfig {
   topic?: string; // Optional - defaults to 'traceflow'
   kafka?: any; // Kafka instance from @confluentinc/kafka-javascript
   producer?: any; // Producer instance from @confluentinc/kafka-javascript
-  serviceUrl?: string; // Optional: TraceFlow Service API URL for state recovery
+  redisUrl?: string; // Optional: Redis URL for state persistence (e.g. 'redis://localhost:6379')
+  redisClient?: any; // Optional: Existing Redis client instance
   cleanerConfig?: TraceFlowCleanerConfig; // Optional: Auto-cleanup configuration
 }
 
@@ -201,6 +203,7 @@ export interface TraceFlowKafkaTraceMessage {
   updated_at?: string;
   started_at?: string;
   finished_at?: string;
+  last_activity_at?: string;
   title?: string;
   description?: string;
   owner?: string;
@@ -224,6 +227,7 @@ export interface TraceFlowKafkaStepMessage {
   started_at?: string;
   finished_at?: string;
   updated_at?: string;
+  last_activity_at?: string;
   input?: any;
   output?: any;
   error?: string;

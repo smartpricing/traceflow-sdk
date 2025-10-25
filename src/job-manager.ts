@@ -1,70 +1,67 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
-  TraceFlowTraceStatus,
+  TraceFlowJobStatus,
   TraceFlowStepStatus,
   CreateStepOptions,
   UpdateStepOptions,
   CreateLogOptions,
   TraceOptions,
-  TraceFlowKafkaTraceMessage,
+  TraceFlowKafkaJobMessage,
   TraceFlowKafkaStepMessage,
   TraceFlowKafkaLogMessage,
-  UpdateTraceOptions,
+  UpdateJobOptions,
 } from './types';
 import { Step } from './step';
-import { TraceFlowRedisClient } from './redis-client';
+import { TraceFlowServiceClient } from './service-client';
 
 /**
- * TraceManager - Manages a specific trace and its steps
+ * JobManager - Manages a specific job and its steps
  * Provides auto-increment logic for step numbers
  */
-export class TraceManager {
-  private traceId: string;
+export class JobManager {
+  private jobId: string;
   private source?: string;
   private currentStepNumber: number = -1;
   private currentStep?: Step;
   private openSteps: Step[] = []; // Track all open steps
   private traceOptions: TraceOptions;
-  private redisClient?: TraceFlowRedisClient; // Optional Redis client for state persistence
+  private serviceClient?: TraceFlowServiceClient; // Optional service client
   private sendMessage: (
     type: 'trace' | 'step' | 'log',
-    data: TraceFlowKafkaTraceMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
+    data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ) => Promise<void>;
 
   constructor(
-    traceId: string,
+    jobId: string,
     source: string | undefined,
     sendMessage: (
       type: 'trace' | 'step' | 'log',
-      data: TraceFlowKafkaTraceMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
+      data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
     ) => Promise<void>,
     traceOptions?: TraceOptions,
-    redisClient?: TraceFlowRedisClient
+    serviceClient?: TraceFlowServiceClient
   ) {
-    this.traceId = traceId;
+    this.jobId = jobId;
     this.source = source;
     this.sendMessage = sendMessage;
     this.traceOptions = traceOptions || {};
-    this.redisClient = redisClient;
+    this.serviceClient = serviceClient;
   }
 
   /**
-   * Initialize step numbering from Redis (if available)
+   * Initialize step numbering from service (if available)
    * Call this when resuming an existing trace
    */
-  async initializeFromRedis(): Promise<void> {
-    if (!this.redisClient) {
-      console.log(`[TraceManager ${this.traceId}] No Redis client - cannot initialize from Redis`);
+  async initializeFromService(): Promise<void> {
+    if (!this.serviceClient) {
       return;
     }
 
     try {
-      console.log(`[TraceManager ${this.traceId}] Initializing step numbering from Redis...`);
-      const lastStepNumber = await this.redisClient.getLastStepNumber(this.traceId);
+      const lastStepNumber = await this.serviceClient.getLastStepNumber(this.jobId);
       this.currentStepNumber = lastStepNumber;
-      console.log(`[TraceManager ${this.traceId}] ✅ Initialized from Redis (last step: ${lastStepNumber})`);
     } catch (error) {
-      console.warn(`[TraceManager ${this.traceId}] ⚠️ Failed to initialize from Redis, using in-memory state:`, error);
+      console.warn('Failed to initialize from service, using in-memory state:', error);
     }
   }
 
@@ -72,7 +69,15 @@ export class TraceManager {
    * Get the trace ID
    */
   getId(): string {
-    return this.traceId;
+    return this.jobId;
+  }
+
+  /**
+   * Alias for getId() - for backward compatibility
+   * @deprecated Use getId() instead
+   */
+  getJobId(): string {
+    return this.getId();
   }
 
   /**
@@ -91,12 +96,12 @@ export class TraceManager {
    */
   getStep(stepNumber: number): Step {
     const step = new Step(
-      this.traceId,
+      this.jobId,
       stepNumber,
       this.source,
       this.sendMessage,
       false,
-      this.redisClient // Pass Redis client for state persistence
+      this.serviceClient // Pass service client for state checking
     );
     return step;
   }
@@ -104,61 +109,41 @@ export class TraceManager {
   /**
    * Update the trace
    */
-  async update(options: UpdateTraceOptions): Promise<void> {
+  async update(options: UpdateJobOptions): Promise<void> {
     const now = new Date().toISOString();
 
-    console.log(`[TraceManager ${this.traceId}] Updating trace (status: ${options.status || 'unchanged'})`);
-
-    const data: TraceFlowKafkaTraceMessage = {
-      trace_id: this.traceId,
+    const data: TraceFlowKafkaJobMessage = {
+      job_id: this.jobId,
       updated_at: now,
-      last_activity_at: now,
       ...options,
       // Convert Date to string if needed
       started_at: options.started_at ? (options.started_at instanceof Date ? options.started_at.toISOString() : options.started_at) : undefined, 
       finished_at: options.finished_at ? (options.finished_at instanceof Date ? options.finished_at.toISOString() : options.finished_at) : undefined,
     };
     await this.sendMessage('trace', data);
+  }
 
-    // Persist to Redis if available
-    if (this.redisClient) {
-      try {
-        console.log(`[TraceManager ${this.traceId}] Persisting trace update to Redis...`);
-        // Get current state from Redis and merge with updates
-        const existingState = await this.redisClient.getTrace(this.traceId);
-        const newState = {
-          trace_id: this.traceId,
-          trace_type: options.trace_type || existingState?.trace_type,
-          status: (options.status as TraceFlowTraceStatus) || existingState?.status || TraceFlowTraceStatus.PENDING,
-          source: options.source || existingState?.source || this.source,
-          created_at: existingState?.created_at || now,
-          updated_at: now,
-          started_at: (options.started_at ? (options.started_at instanceof Date ? options.started_at.toISOString() : options.started_at) : existingState?.started_at),
-          finished_at: (options.finished_at ? (options.finished_at instanceof Date ? options.finished_at.toISOString() : options.finished_at) : existingState?.finished_at),
-          title: options.title || existingState?.title,
-          description: options.description || existingState?.description,
-          owner: options.owner || existingState?.owner,
-          tags: options.tags || existingState?.tags,
-          metadata: options.metadata || existingState?.metadata,
-          params: options.params || existingState?.params,
-          result: options.result || existingState?.result,
-          error: options.error || existingState?.error,
-          last_activity_at: now,
-        };
-        await this.redisClient.saveTrace(newState);
-      } catch (error) {
-        console.error(`[TraceManager ${this.traceId}] ❌ Failed to persist trace state to Redis:`, error);
-      }
-    }
-
-    console.log(`[TraceManager ${this.traceId}] ✅ Trace updated successfully`);
+  /**
+   * Alias for update() - for backward compatibility
+   * @deprecated Use update() instead
+   */
+  async updateJob(options: UpdateJobOptions): Promise<void> {
+    return this.update(options);
   }
 
   /**
    * Start the trace (set status to RUNNING)
    */
   async start(): Promise<void> {
-    await this.update({ status: TraceFlowTraceStatus.RUNNING });
+    await this.update({ status: TraceFlowJobStatus.RUNNING });
+  }
+
+  /**
+   * Alias for start() - for backward compatibility
+   * @deprecated Use start() instead
+   */
+  async startJob(): Promise<void> {
+    return this.start();
   }
 
   /**
@@ -166,24 +151,20 @@ export class TraceManager {
    * Automatically closes all pending steps
    */
   async complete(result?: any): Promise<void> {
-    console.log(`[TraceManager ${this.traceId}] Completing trace...`);
-    
     // Close all pending steps first
     await this.closeAllPendingSteps();
 
     const now = new Date().toISOString();
 
-    const data: TraceFlowKafkaTraceMessage = {
-      trace_id: this.traceId,
-      status: TraceFlowTraceStatus.SUCCESS,
+    const data: TraceFlowKafkaJobMessage = {
+      job_id: this.jobId,
+      status: TraceFlowJobStatus.SUCCESS,
       updated_at: now,
       finished_at: now,
       ...(result !== undefined && { result }),
     };
 
     await this.sendMessage('trace', data);
-    
-    console.log(`[TraceManager ${this.traceId}] ✅ Trace completed successfully`);
   }
 
   /**
@@ -192,6 +173,22 @@ export class TraceManager {
    */
   async finish(result?: any): Promise<void> {
     return this.complete(result);
+  }
+
+  /**
+   * Alias for complete() - for backward compatibility
+   * @deprecated Use complete() instead
+   */
+  async completeJob(result?: any): Promise<void> {
+    return this.complete(result);
+  }
+
+  /**
+   * Alias for finish() - for backward compatibility
+   * @deprecated Use finish() instead
+   */
+  async finishJob(result?: any): Promise<void> {
+    return this.finish(result);
   }
 
   /**
@@ -204,15 +201,23 @@ export class TraceManager {
 
     const now = new Date().toISOString();
 
-    const data: TraceFlowKafkaTraceMessage = {
-      trace_id: this.traceId,
-      status: TraceFlowTraceStatus.FAILED,
+    const data: TraceFlowKafkaJobMessage = {
+      job_id: this.jobId,
+      status: TraceFlowJobStatus.FAILED,
       updated_at: now,
       finished_at: now,
       error,
     };
 
     await this.sendMessage('trace', data);
+  }
+
+  /**
+   * Alias for fail() - for backward compatibility
+   * @deprecated Use fail() instead
+   */
+  async failJob(error: string): Promise<void> {
+    return this.fail(error);
   }
 
   /**
@@ -225,14 +230,22 @@ export class TraceManager {
 
     const now = new Date().toISOString();
 
-    const data: TraceFlowKafkaTraceMessage = {
-      trace_id: this.traceId,
-      status: TraceFlowTraceStatus.CANCELLED,
+    const data: TraceFlowKafkaJobMessage = {
+      job_id: this.jobId,
+      status: TraceFlowJobStatus.CANCELLED,
       updated_at: now,
       finished_at: now,
     };
 
     await this.sendMessage('trace', data);
+  }
+
+  /**
+   * Alias for cancel() - for backward compatibility
+   * @deprecated Use cancel() instead
+   */
+  async cancelJob(): Promise<void> {
+    return this.cancel();
   }
 
   /**
@@ -243,11 +256,8 @@ export class TraceManager {
   async step(options: CreateStepOptions = {}): Promise<Step> {
     const now = new Date().toISOString();
 
-    console.log(`[TraceManager ${this.traceId}] Creating new step (name: ${options.name || 'unnamed'}, type: ${options.step_type || 'none'})`);
-
     // Auto-close previous step if option is enabled
     if (this.traceOptions.autoCloseSteps && this.currentStep && !this.currentStep.isClosed()) {
-      console.log(`[TraceManager ${this.traceId}] Auto-closing previous step ${this.currentStep.getStepNumber()}`);
       await this.currentStep.complete();
     }
 
@@ -255,7 +265,6 @@ export class TraceManager {
     let stepNumber: number;
     if (options.step_number !== undefined) {
       stepNumber = options.step_number;
-      console.log(`[TraceManager ${this.traceId}] Using manual step number: ${stepNumber}`);
       // Update current step number if it's higher
       if (stepNumber > this.currentStepNumber) {
         this.currentStepNumber = stepNumber;
@@ -263,11 +272,10 @@ export class TraceManager {
     } else {
       this.currentStepNumber++;
       stepNumber = this.currentStepNumber;
-      console.log(`[TraceManager ${this.traceId}] Auto-incremented step number: ${stepNumber}`);
     }
 
     const data: TraceFlowKafkaStepMessage = {
-      trace_id: this.traceId,
+      job_id: this.jobId,
       step_number: stepNumber,
       step_id: options.step_id || uuidv4(),
       step_type: options.step_type,
@@ -281,32 +289,8 @@ export class TraceManager {
 
     await this.sendMessage('step', data);
 
-    // Persist to Redis if available
-    if (this.redisClient) {
-      try {
-        console.log(`[TraceManager ${this.traceId}] Persisting step ${stepNumber} to Redis...`);
-        await this.redisClient.saveStep({
-          trace_id: this.traceId,
-          step_number: stepNumber,
-          step_id: data.step_id!,
-          step_type: data.step_type,
-          name: data.name,
-          status: data.status as TraceFlowStepStatus,
-          started_at: data.started_at!,
-          updated_at: data.updated_at!,
-          input: data.input,
-          metadata: data.metadata,
-          last_activity_at: now,
-        });
-      } catch (error) {
-        console.error(`[TraceManager ${this.traceId}] ❌ Failed to persist step state to Redis:`, error);
-      }
-    }
-
-    console.log(`[TraceManager ${this.traceId}] ✅ Step ${stepNumber} created successfully`);
-
     // Create and store the Step instance
-    const step = new Step(this.traceId, stepNumber, this.source, this.sendMessage, false, this.redisClient);
+    const step = new Step(this.jobId, stepNumber, this.source, this.sendMessage);
     this.currentStep = step;
     
     // Track this step in openSteps
@@ -323,22 +307,33 @@ export class TraceManager {
     // Sort steps by step_number to maintain order (by updated_at flow)
     const pendingSteps = this.openSteps.filter(step => !step.isClosed());
     
-    console.log(`[TraceManager ${this.traceId}] Closing ${pendingSteps.length} pending steps...`);
-    
     for (const step of pendingSteps) {
       try {
-        console.log(`[TraceManager ${this.traceId}] Closing pending step ${step.getStepNumber()}...`);
         await step.complete();
       } catch (error) {
         // Ignore errors for already closed steps
-        console.warn(`[TraceManager ${this.traceId}] ⚠️ Failed to close step ${step.getStepNumber()}:`, error);
+        console.warn(`Failed to close step ${step.getStepNumber()}:`, error);
       }
     }
     
     // Clear the openSteps array
     this.openSteps = [];
-    
-    console.log(`[TraceManager ${this.traceId}] ✅ All pending steps closed`);
+  }
+
+  /**
+   * Alias for step() - for backward compatibility
+   * @deprecated Use step() instead - returns Step instance now
+   */
+  async traceStep(options: CreateStepOptions = {}): Promise<Step> {
+    return this.step(options);
+  }
+
+  /**
+   * Alias for step() - for backward compatibility
+   * @deprecated Use step() instead - returns Step instance now
+   */
+  async createStep(options: CreateStepOptions = {}): Promise<Step> {
+    return this.step(options);
   }
 
   /**
@@ -348,7 +343,7 @@ export class TraceManager {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaStepMessage = {
-      trace_id: this.traceId,
+      job_id: this.jobId,
       step_number: stepNumber,
       updated_at: now,
       ...options,
@@ -366,7 +361,7 @@ export class TraceManager {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaStepMessage = {
-      trace_id: this.traceId,
+      job_id: this.jobId,
       step_number: stepNumber,
       status: TraceFlowStepStatus.COMPLETED,
       finished_at: now,
@@ -392,7 +387,7 @@ export class TraceManager {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaStepMessage = {
-      trace_id: this.traceId,
+      job_id: this.jobId,
       step_number: stepNumber,
       status: TraceFlowStepStatus.FAILED,
       finished_at: now,
@@ -405,13 +400,13 @@ export class TraceManager {
 
   /**
    * Create a log entry
-   * Can be associated with a specific step or just the trace
+   * Can be associated with a specific step or just the job
    */
   async log(options: CreateLogOptions): Promise<void> {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaLogMessage = {
-      trace_id: this.traceId,
+      job_id: this.jobId,
       log_time: now,
       step_number: options.step_number,
       level: options.level,

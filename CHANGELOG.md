@@ -27,7 +27,7 @@ All notable changes to this project will be documented in this file. See [standa
 ### Use Cases
 - **Kubernetes**: Recover state after pod restarts/crashes
 - **Distributed Systems**: Multiple services coordinating on traces
-- **Long-running Jobs**: Resume after interruptions
+- **Long-Running Traces**: Resume after interruptions
 - **State Queries**: Check trace/step status from persistent storage
 
 ---
@@ -37,7 +37,7 @@ All notable changes to this project will be documented in this file. See [standa
 ### Added
 - **`getTrace()` method** - Retrieve existing traces by ID for cross-service workflows
   - Resume traces from different processes/services
-  - `client.getTrace(jobId)` returns JobManager for existing trace
+  - `client.getTrace(traceId)` returns TraceManager for existing trace
   - Example: `const trace = client.getTrace('uuid'); await trace.finish();`
 - **`getStep()` method** - Retrieve existing steps by number
   - Resume work on specific steps from another service
@@ -47,15 +47,15 @@ All notable changes to this project will be documented in this file. See [standa
 - New test `test-11-resuming-traces.ts` for getTrace/getStep functionality
 
 ### Changed
-- **Method Renaming (Job → Trace)** - Cleaner API without "job" terminology:
+- **Method Renaming (Trace terminology)** - Cleaner API with trace terminology:
   - `getJobId()` → `getId()` (getJobId deprecated)
   - `updateJob()` → `update()` (updateJob deprecated)
-  - `getJobManager()` → `getTrace()` (getJobManager deprecated)
+  - `getTraceManager()` → `getTrace()` (getTraceManager deprecated)
   - All old methods maintained as deprecated aliases for backward compatibility
 
 ### Use Cases
 - **Multi-service workflows**: Order service creates trace → Warehouse service resumes and adds steps → Shipping service completes
-- **Long-running jobs**: Resume traces after process restarts
+- **Long-running traces**: Resume traces after process restarts
 - **Distributed systems**: Multiple nodes working on the same trace
 
 ---
@@ -86,7 +86,7 @@ All notable changes to this project will be documented in this file. See [standa
   - Old: `const stepNum = await trace.step({ ... })`
   - New: `const step = await trace.step({ ... })`
 - `trace()` now accepts optional `TraceOptions` parameter
-- `getJobManager()` now accepts optional `TraceOptions` parameter
+- `getTraceManager()` now accepts optional `TraceOptions` parameter
 - Legacy methods (`finishStep`, `completeStep`, `failStep`, `updateStep`) still work for backward compatibility
 
 ### Improved
@@ -117,7 +117,7 @@ All notable changes to this project will be documented in this file. See [standa
 ## [1.0.1] - 2025-10-24
 
 ### Added
-- **Cleaner API** - Removed "job" from method names, focusing on tracing:
+- **Cleaner API** - Focused on trace terminology:
   - `trace()` - Start a new trace (replaces `traceJob()`)
   - `step()` - Add a step (replaces `traceStep()`)
   - `start()` - Start trace (replaces `startJob()`)
@@ -139,7 +139,7 @@ All notable changes to this project will be documented in this file. See [standa
   - Lower latency optimized for production
   - Full KafkaJS API compatibility maintained
 - All type names now prefixed with `TraceFlow` for better namespace management
-  - `JobStatus` → `TraceFlowJobStatus`
+  - `TraceStatus` → `TraceFlowTraceStatus`
   - `StepStatus` → `TraceFlowStepStatus`
   - `LogLevel` → `TraceFlowLogLevel`
   - `EventType` → `TraceFlowEventType`
@@ -154,8 +154,8 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Added
 - Initial release of TraceFlow SDK
-- Complete job tracking system with auto-increment step numbers
-- Support for jobs, steps, and logs
+- Complete trace tracking system with auto-increment step numbers
+- Support for traces, steps, and logs
 - Integrated logging with helper methods (info, warn, error, debug)
 - TypeScript-first with full type definitions
 - Support for both Kafka configuration and existing instance reuse

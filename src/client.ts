@@ -4,15 +4,15 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   TraceFlowKafkaConfig,
   TraceFlowConfig,
-  CreateJobOptions,
+  CreateTraceOptions,
   TraceOptions,
-  TraceFlowKafkaJobMessage,
+  TraceFlowKafkaTraceMessage,
   TraceFlowKafkaStepMessage,
   TraceFlowKafkaLogMessage,
   TraceFlowKafkaMessage,
-  TraceFlowJobStatus,
+  TraceFlowTraceStatus,
 } from './types';
-import { JobManager } from './job-manager';
+import { TraceManager } from './trace-manager';
 import { TraceFlowServiceClient } from './service-client';
 import { TraceJobCleaner } from './trace-cleaner';
 
@@ -174,7 +174,7 @@ export class TraceFlowClient {
    */
   private async sendMessage(
     type: 'trace' | 'step' | 'log',
-    data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
+    data: TraceFlowKafkaTraceMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ): Promise<void> {
     if (!this.connected) {
       throw new Error('Client not connected. Call connect() first.');
@@ -189,7 +189,7 @@ export class TraceFlowClient {
       topic: this.topic,
       messages: [
         {
-          key: data.job_id,
+          key: 'trace_id' in data ? data.trace_id : '',
           value: JSON.stringify(message),
         },
       ],
@@ -198,20 +198,20 @@ export class TraceFlowClient {
 
   /**
    * Start a new trace
-   * Returns a JobManager instance to manage the trace
-   * @param options - Job creation options
+   * Returns a TraceManager instance to manage the trace
+   * @param options - Trace creation options
    * @param traceOptions - Trace behavior options (e.g., autoCloseSteps)
    */
-  async trace(options: CreateJobOptions = {}, traceOptions?: TraceOptions): Promise<JobManager> {
-    const jobId = uuidv4();
+  async trace(options: CreateTraceOptions = {}, traceOptions?: TraceOptions): Promise<TraceManager> {
+    const traceId = uuidv4();
     const now = new Date().toISOString();
 
     const source = options.source || this.defaultSource;
 
-    const data: TraceFlowKafkaJobMessage = {
-      job_id: jobId,
-      job_type: options.job_type,
-      status: options.status || TraceFlowJobStatus.PENDING,
+    const data: TraceFlowKafkaTraceMessage = {
+      trace_id: traceId,
+      trace_type: options.trace_type,
+      status: options.status || TraceFlowTraceStatus.PENDING,
       source,
       created_at: now,
       updated_at: now,
@@ -225,15 +225,15 @@ export class TraceFlowClient {
 
     await this.sendMessage('trace', data);
 
-    // Return a JobManager for this job
-    return new JobManager(jobId, source, this.sendMessage.bind(this), traceOptions);
+    // Return a TraceManager for this trace
+    return new TraceManager(traceId, source, this.sendMessage.bind(this), traceOptions);
   }
 
   /**
    * Alias for trace() - for backward compatibility
    * @deprecated Use trace() instead
    */
-  async traceJob(options: CreateJobOptions = {}, traceOptions?: TraceOptions): Promise<JobManager> {
+  async traceJob(options: CreateTraceOptions = {}, traceOptions?: TraceOptions): Promise<TraceManager> {
     return this.trace(options, traceOptions);
   }
 
@@ -241,32 +241,32 @@ export class TraceFlowClient {
    * Alias for trace() - for backward compatibility
    * @deprecated Use trace() instead
    */
-  async createJob(options: CreateJobOptions = {}, traceOptions?: TraceOptions): Promise<JobManager> {
+  async createJob(options: CreateTraceOptions = {}, traceOptions?: TraceOptions): Promise<TraceManager> {
     return this.trace(options, traceOptions);
   }
 
   /**
-   * Get a JobManager for an existing job
-   * Useful if you need to update a job from a different process/instance
+   * Get a TraceManager for an existing trace
+   * Useful if you need to update a trace from a different process/instance
    * 
-   * @param jobId - The job ID (UUID)
+   * @param traceId - The trace ID (UUID)
    * @param source - Optional source identifier
    * @param traceOptions - Optional trace options
-   * @returns JobManager instance for the existing job
+   * @returns TraceManager instance for the existing trace
    * 
    * @example
    * ```typescript
    * // In another process/service, resume an existing trace
-   * const trace = client.getTrace('existing-job-uuid');
+   * const trace = client.getTrace('existing-trace-uuid');
    * await trace.update({ status: 'RUNNING' });
    * 
    * const step = trace.getStep(0);
    * await step.finish();
    * ```
    */
-  getTrace(jobId: string, source?: string, traceOptions?: TraceOptions): JobManager {
-    return new JobManager(
-      jobId,
+  getTrace(traceId: string, source?: string, traceOptions?: TraceOptions): TraceManager {
+    return new TraceManager(
+      traceId,
       source || this.defaultSource,
       this.sendMessage.bind(this),
       traceOptions,
@@ -278,8 +278,8 @@ export class TraceFlowClient {
    * Alias for getTrace() - for backward compatibility
    * @deprecated Use getTrace() instead
    */
-  getJobManager(jobId: string, source?: string, traceOptions?: TraceOptions): JobManager {
-    return this.getTrace(jobId, source, traceOptions);
+  getJobManager(traceId: string, source?: string, traceOptions?: TraceOptions): TraceManager {
+    return this.getTrace(traceId, source, traceOptions);
   }
 
   /**
@@ -303,7 +303,7 @@ export class TraceFlowClient {
    */
   async sendRawMessage(
     type: 'trace' | 'step' | 'log',
-    data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
+    data: TraceFlowKafkaTraceMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ): Promise<void> {
     await this.sendMessage(type, data);
   }

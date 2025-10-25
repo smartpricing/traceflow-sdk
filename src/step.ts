@@ -15,7 +15,7 @@ import { TraceFlowServiceClient } from './service-client';
  * Can be used for both new steps and existing steps (for updates from other processes)
  */
 export class Step {
-  private jobId: string;
+  private traceId: string;
   private stepNumber: number;
   private source?: string;
   private closed: boolean = false;
@@ -28,7 +28,7 @@ export class Step {
   /**
    * Create a Step instance
    * 
-   * @param jobId - The job/trace ID
+   * @param traceId - The trace ID
    * @param stepNumber - The step number
    * @param source - Optional source identifier
    * @param sendMessage - Function to send Kafka messages
@@ -36,14 +36,14 @@ export class Step {
    * @param serviceClient - Optional service client for state checking
    */
   constructor(
-    jobId: string,
+    traceId: string,
     stepNumber: number,
     source: string | undefined,
     sendMessage: (type: 'trace' | 'step' | 'log', data: any) => Promise<void>,
     isExisting: boolean = false,
     serviceClient?: TraceFlowServiceClient
   ) {
-    this.jobId = jobId;
+    this.traceId = traceId;
     this.stepNumber = stepNumber;
     this.source = source;
     this.sendMessage = sendMessage;
@@ -63,7 +63,7 @@ export class Step {
     }
 
     try {
-      return await this.serviceClient.isStepClosed(this.jobId, this.stepNumber);
+      return await this.serviceClient.isStepClosed(this.traceId, this.stepNumber);
     } catch (error) {
       console.warn('Failed to check step state from service, using in-memory state:', error);
       return this.closed;
@@ -95,7 +95,7 @@ export class Step {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaStepMessage = {
-      job_id: this.jobId,
+      trace_id: this.traceId,
       step_number: this.stepNumber,
       updated_at: now,
       ...options,
@@ -117,7 +117,7 @@ export class Step {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaStepMessage = {
-      job_id: this.jobId,
+      trace_id: this.traceId,
       step_number: this.stepNumber,
       status: TraceFlowStepStatus.COMPLETED,
       finished_at: now,
@@ -147,7 +147,7 @@ export class Step {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaStepMessage = {
-      job_id: this.jobId,
+      trace_id: this.traceId,
       step_number: this.stepNumber,
       status: TraceFlowStepStatus.FAILED,
       finished_at: now,
@@ -166,7 +166,7 @@ export class Step {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaLogMessage = {
-      job_id: this.jobId,
+      trace_id: this.traceId,
       log_time: now,
       step_number: this.stepNumber,
       level,

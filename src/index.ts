@@ -1,10 +1,10 @@
 /**
  * TraceFlow SDK
- * SDK for sending job tracking messages to Kafka
+ * SDK for sending trace tracking messages to Kafka
  */
 
 export { TraceFlowClient } from './client';
-export { JobManager } from './job-manager';
+export { TraceManager } from './trace-manager';
 export { Step } from './step';
 export { TraceFlowServiceClient } from './service-client';
 export { TraceJobCleaner } from './trace-cleaner';
@@ -50,7 +50,7 @@ export const hasTraceFlow = TraceFlowClient.hasInstance.bind(TraceFlowClient);
  */
 export const resetTraceFlow = TraceFlowClient.reset.bind(TraceFlowClient);
 export {
-  TraceFlowJobStatus,
+  TraceFlowTraceStatus,
   TraceFlowStepStatus,
   TraceFlowLogLevel,
   TraceFlowEventType,
@@ -61,14 +61,15 @@ export type {
   TraceFlowKafkaInstanceConfig,
   TraceFlowConfig,
   TraceFlowCleanerConfig,
-  CreateJobOptions,
-  UpdateJobOptions,
+  CreateTraceOptions,
+  UpdateTraceOptions,
   CreateStepOptions,
   UpdateStepOptions,
   CreateLogOptions,
-  TraceFlowKafkaJobMessage,
+  TraceFlowKafkaTraceMessage,
   TraceFlowKafkaStepMessage,
   TraceFlowKafkaLogMessage,
   TraceFlowKafkaMessage,
 } from './types';
+
 

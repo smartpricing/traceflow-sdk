@@ -1,7 +1,7 @@
 {
   "name": "@dev.smartpricing/traceflow-sdk",
-  "version": "1.0.6",
-  "description": "SDK for sending job tracking messages to Kafka with automatic step management",
+  "version": "2.0.0",
+  "description": "SDK for sending trace tracking messages to Kafka with automatic step management",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -20,10 +20,9 @@
   },
   "keywords": [
     "kafka",
-    "job-tracking",
     "tracing",
     "monitoring",
-    "jobs",
+    "traces",
     "steps",
     "logs"
   ],

@@ -1,12 +1,12 @@
 /**
  * TraceFlow SDK Types
- * Types for sending job tracking messages to Kafka
+ * Types for sending trace tracking messages to Kafka
  */
 
 /**
- * Job status enum
+ * Trace status enum
  */
-export enum TraceFlowJobStatus {
+export enum TraceFlowTraceStatus {
   PENDING = 'pending',
   RUNNING = 'running',
   SUCCESS = 'success',
@@ -106,11 +106,11 @@ export interface TraceFlowKafkaInstanceConfig {
 export type TraceFlowConfig = TraceFlowKafkaConfig | TraceFlowKafkaInstanceConfig;
 
 /**
- * Job creation options
+ * Trace creation options
  */
-export interface CreateJobOptions {
-  job_type?: string;
-  status?: TraceFlowJobStatus | string;
+export interface CreateTraceOptions {
+  trace_type?: string;
+  status?: TraceFlowTraceStatus | string;
   source?: string;
   title?: string;
   description?: string;
@@ -132,11 +132,11 @@ export interface TraceOptions {
 }
 
 /**
- * Job update options
+ * Trace update options
  */
-export interface UpdateJobOptions {
-  job_type?: string;
-  status?: TraceFlowJobStatus | string;
+export interface UpdateTraceOptions {
+  trace_type?: string;
+  status?: TraceFlowTraceStatus | string;
   source?: string;
   title?: string;
   description?: string;
@@ -190,11 +190,11 @@ export interface CreateLogOptions {
 }
 
 /**
- * Internal Kafka message payload for jobs
+ * Internal Kafka message payload for traces
  */
-export interface TraceFlowKafkaJobMessage {
-  job_id: string;
-  job_type?: string;
+export interface TraceFlowKafkaTraceMessage {
+  trace_id: string;
+  trace_type?: string;
   status?: string;
   source?: string;
   created_at?: string;
@@ -215,7 +215,7 @@ export interface TraceFlowKafkaJobMessage {
  * Internal Kafka message payload for steps
  */
 export interface TraceFlowKafkaStepMessage {
-  job_id: string;
+  trace_id: string;
   step_number: number;
   step_id?: string;
   step_type?: string;
@@ -234,7 +234,7 @@ export interface TraceFlowKafkaStepMessage {
  * Internal Kafka message payload for logs
  */
 export interface TraceFlowKafkaLogMessage {
-  job_id: string;
+  trace_id: string;
   log_time?: string;
   log_id?: string;
   step_number?: number;
@@ -250,6 +250,6 @@ export interface TraceFlowKafkaLogMessage {
  */
 export interface TraceFlowKafkaMessage {
   type: 'trace' | 'step' | 'log';
-  data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage;
+  data: TraceFlowKafkaTraceMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage;
 }
 

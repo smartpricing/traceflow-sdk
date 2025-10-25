@@ -1,15 +1,15 @@
 # TraceFlow SDK
 
-TypeScript SDK for sending job tracking messages to Kafka. Provides a simple interface to create, update, and complete jobs with automatic step management and logging.
+TypeScript SDK for sending trace tracking messages to Kafka. Provides a simple interface to create, update, and complete traces with automatic step management and logging.
 
 ## 🌟 Features
 
-- ✅ **Complete Job Management** - Create, update, complete or fail jobs
+- ✅ **Complete Trace Management** - Create, update, complete or fail traces
 - ✅ **Auto-increment Steps** - Steps are automatically numbered if not specified
 - ✅ **Integrated Logging** - Helpers for INFO, WARN, ERROR, DEBUG level logs
 - ✅ **TypeScript First** - Fully typed with TypeScript
 - ✅ **Flexible Kafka** - Use configuration or existing Kafka instance
-- ✅ **Job Manager** - Intuitive job and step management via dedicated object
+- ✅ **Trace Manager** - Intuitive trace and step management via dedicated object
 - ✅ **Rich Metadata** - Support for tags, custom metadata, params and results
 
 ## 📦 Installation
@@ -33,7 +33,7 @@ import { initializeTraceFlow, getTraceFlow } from 'traceflow-sdk';
 const client = initializeTraceFlow(
   {
     brokers: ['localhost:9092'],
-    topic: 'ota-jobs',
+    topic: 'ota-traces',
     clientId: 'my-app',
   },
   'my-service' // default source
@@ -46,7 +46,7 @@ async function someOperation() {
   const client = getTraceFlow();
   
   const trace = await client.trace({
-    job_type: 'sync',
+    trace_type: 'sync',
     title: 'Data Sync',
   });
   
@@ -61,7 +61,7 @@ async function someOperation() {
 You can also create instances directly:
 
 ```typescript
-import { TraceFlowClient, TraceFlowJobStatus } from 'traceflow-sdk';
+import { TraceFlowClient, TraceFlowTraceStatus } from 'traceflow-sdk';
 
 // Create the client
 const client = new TraceFlowClient(
@@ -78,7 +78,7 @@ await client.connect();
 
 // Start a new trace
 const trace = await client.trace({
-  job_type: 'sync',
+  trace_type: 'sync',
   title: 'Sync Airbnb Data',
   description: 'Synchronizing booking data',
   tags: ['airbnb', 'sync'],
@@ -121,7 +121,7 @@ Enable automatic step closing when creating a new step:
 // Enable autoCloseSteps option
 const trace = await client.trace(
   {
-    job_type: 'sync',
+    trace_type: 'sync',
     title: 'Data Sync',
   },
   { autoCloseSteps: true } // Automatically close previous step
@@ -238,7 +238,7 @@ await client.connect();
 
 ```typescript
 const trace = await client.trace({
-  job_type: 'sync', // job type
+  trace_type: 'sync', // trace type
   title: 'Sync Booking Data',
   description: 'Synchronizing bookings from Airbnb',
   owner: 'sync-service',
@@ -263,11 +263,11 @@ console.log(`Trace ID: ${trace.getId()}`);
 await trace.start();
 
 // Or update status manually
-await trace.update({ status: TraceFlowJobStatus.RUNNING });
+await trace.update({ status: TraceFlowTraceStatus.RUNNING });
 
 // Update with multiple fields
 await trace.update({
-  status: TraceFlowJobStatus.RUNNING,
+  status: TraceFlowTraceStatus.RUNNING,
   metadata: { progress: '50%' },
 });
 ```
@@ -325,7 +325,7 @@ Enable automatic closing of previous steps:
 
 ```typescript
 const trace = await client.trace(
-  { job_type: 'sync' },
+  { trace_type: 'sync' },
   { autoCloseSteps: true } // Enable auto-close
 );
 
@@ -440,7 +440,7 @@ await existingTrace.finish({ success: true });
 
 **Use Cases:**
 - **Multi-service workflows:** Different services can work on the same trace
-- **Long-running jobs:** Resume a trace after process restart
+- **Long-running traces:** Resume a trace after process restart
 - **Distributed systems:** Update traces from different nodes
 - **Recovery:** Resume failed traces from their last state
 
@@ -527,7 +527,7 @@ await client.connect();
 // Create trace with auto-close steps
 const trace = await client.trace(
   { 
-    job_type: 'etl',
+    trace_type: 'etl',
     title: 'Daily Data Pipeline',
   },
   { autoCloseSteps: true } // Automatic step management
@@ -612,16 +612,16 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 
 - `connect(): Promise<void>` - Connect to Kafka
 - `disconnect(): Promise<void>` - Disconnect from Kafka
-- `trace(options: CreateJobOptions, traceOptions?: TraceOptions): Promise<JobManager>` - Start a new trace
-- `getTrace(jobId: string, source?: string, traceOptions?: TraceOptions): JobManager` - Get existing trace
-- `traceJob(options: CreateJobOptions, traceOptions?: TraceOptions): Promise<JobManager>` - Alias for trace() (deprecated)
-- `createJob(options: CreateJobOptions, traceOptions?: TraceOptions): Promise<JobManager>` - Alias for trace() (deprecated)
-- `getJobManager(jobId: string, source?: string, traceOptions?: TraceOptions): JobManager` - Alias for getTrace() (deprecated)
+- `trace(options: CreateTraceOptions, traceOptions?: TraceOptions): Promise<TraceManager>` - Start a new trace
+- `getTrace(traceId: string, source?: string, traceOptions?: TraceOptions): TraceManager` - Get existing trace
+- `traceJob(options: CreateTraceOptions, traceOptions?: TraceOptions): Promise<TraceManager>` - Alias for trace() (deprecated)
+- `createJob(options: CreateTraceOptions, traceOptions?: TraceOptions): Promise<TraceManager>` - Alias for trace() (deprecated)
+- `getJobManager(traceId: string, source?: string, traceOptions?: TraceOptions): TraceManager` - Alias for getTrace() (deprecated)
 - `isConnected(): boolean` - Check if connected
 - `getTopic(): string` - Get configured topic
 - `getDefaultSource(): string | undefined` - Get default source
 
-### JobManager
+### TraceManager
 
 #### Trace Methods
 
@@ -629,8 +629,8 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 - `getJobId(): string` - Alias for getId() (deprecated)
 - `getStep(stepNumber: number): Step` - Get existing step by number
 - `start(): Promise<void>` - Start trace (set status to RUNNING)
-- `update(options: UpdateJobOptions): Promise<void>` - Update trace
-- `updateJob(options: UpdateJobOptions): Promise<void>` - Alias for update() (deprecated)
+- `update(options: UpdateTraceOptions): Promise<void>` - Update trace
+- `updateJob(options: UpdateTraceOptions): Promise<void>` - Alias for update() (deprecated)
 - `finish(result?: any): Promise<void>` - Finish trace successfully
 - `complete(result?: any): Promise<void>` - Complete trace (same as finish)
 - `fail(error: string): Promise<void>` - Fail trace
@@ -682,7 +682,7 @@ The `Step` class represents a single step in a trace.
 1. **Use the singleton pattern** - Initialize once with `initializeTraceFlow()`, use everywhere with `getTraceFlow()`
 2. **Use auto-increment** for steps when possible - it's simpler and less error-prone
 3. **Add detailed logging** - helps with debugging and monitoring
-4. **Use metadata and tags** - facilitates filtering and job analysis
+4. **Use metadata and tags** - facilitates filtering and trace analysis
 5. **Always handle errors** - use `fail()` and `failStep()` appropriately
 6. **Reuse Kafka connections** - the singleton pattern handles this automatically
 7. **Close connections** - call `disconnect()` on application shutdown
@@ -693,7 +693,7 @@ Messages sent to the Kafka topic have this format:
 
 ```json
 {
-  "type": "job" | "step" | "log",
+  "type": "trace" | "step" | "log",
   "data": {
     // ... type-specific fields
   }
@@ -707,7 +707,7 @@ See the `cb-channel-scylla-writter` service documentation for complete schema de
 This SDK is designed to work with:
 
 - **cb-channel-scylla-writter** - Kafka consumer that writes to ScyllaDB
-- **scylla-job-dashboard** - Nuxt dashboard for visualizing jobs
+- **scylla-trace-dashboard** - Nuxt dashboard for visualizing traces
 
 ## 🚀 Performance
 

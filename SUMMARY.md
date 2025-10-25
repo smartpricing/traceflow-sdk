@@ -64,7 +64,7 @@ console.log(step.isClosed()); // true
 
 ```typescript
 const trace = await client.trace(
-  { job_type: 'etl' },
+  { trace_type: 'etl' },
   { autoCloseSteps: true } // ← Enable auto-close
 );
 
@@ -98,8 +98,8 @@ Plus:
 
 ### Core SDK Files
 - `src/types.ts` - Made `topic` optional, added `TraceOptions`
-- `src/client.ts` - Default topic to `'traceflow'`, pass `TraceOptions` to `JobManager`
-- `src/job-manager.ts` - Track open steps, auto-close on trace completion
+- `src/client.ts` - Default topic to `'traceflow'`, pass `TraceOptions` to `TraceManager`
+- `src/trace-manager.ts` - Track open steps, auto-close on trace completion
 - `src/step.ts` - New Step class (created)
 - `src/index.ts` - Export Step class
 

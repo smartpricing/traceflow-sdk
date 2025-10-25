@@ -25,7 +25,7 @@ async function test09LargeWorkflow() {
     },
     { autoCloseSteps: true } // Use auto-close to simplify
   );
-  console.log(`  Trace ID: ${trace1.getJobId()}`);
+  console.log(`  Trace ID: ${trace1.getId()}`);
   await trace1.start();
 
   for (let i = 1; i <= 20; i++) {
@@ -57,7 +57,7 @@ async function test09LargeWorkflow() {
     job_type: 'test_mixed_operations',
     title: 'Mixed Operations Workflow',
   });
-  console.log(`  Trace ID: ${trace2.getJobId()}`);
+  console.log(`  Trace ID: ${trace2.getId()}`);
   await trace2.start();
 
   const operations = [

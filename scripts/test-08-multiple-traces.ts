@@ -23,21 +23,21 @@ async function test08MultiplTraces() {
     title: 'Concurrent Trace 1',
     tags: ['concurrent', 'test'],
   });
-  console.log(`  Trace 1 ID: ${trace1.getJobId()}`);
+  console.log(`  Trace 1 ID: ${trace1.getId()}`);
 
   const trace2 = await client.trace({
     job_type: 'test_concurrent_2',
     title: 'Concurrent Trace 2',
     tags: ['concurrent', 'test'],
   });
-  console.log(`  Trace 2 ID: ${trace2.getJobId()}`);
+  console.log(`  Trace 2 ID: ${trace2.getId()}`);
 
   const trace3 = await client.trace({
     job_type: 'test_concurrent_3',
     title: 'Concurrent Trace 3',
     tags: ['concurrent', 'test'],
   });
-  console.log(`  Trace 3 ID: ${trace3.getJobId()}\n`);
+  console.log(`  Trace 3 ID: ${trace3.getId()}\n`);
 
   // Start all traces
   await Promise.all([
@@ -103,7 +103,7 @@ async function test08MultiplTraces() {
     await step.finish();
     
     await trace.finish();
-    console.log(`  Trace ${i} completed (${trace.getJobId()})`);
+    console.log(`  Trace ${i} completed (${trace.getId()})`);
   }
   console.log('  ✓ Test passed\n');
 

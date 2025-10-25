@@ -12,6 +12,7 @@ import {
   UpdateJobOptions,
 } from './types';
 import { Step } from './step';
+import { TraceFlowServiceClient } from './service-client';
 
 /**
  * JobManager - Manages a specific job and its steps
@@ -24,6 +25,7 @@ export class JobManager {
   private currentStep?: Step;
   private openSteps: Step[] = []; // Track all open steps
   private traceOptions: TraceOptions;
+  private serviceClient?: TraceFlowServiceClient; // Optional service client
   private sendMessage: (
     type: 'job' | 'step' | 'log',
     data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
@@ -36,25 +38,78 @@ export class JobManager {
       type: 'job' | 'step' | 'log',
       data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
     ) => Promise<void>,
-    traceOptions?: TraceOptions
+    traceOptions?: TraceOptions,
+    serviceClient?: TraceFlowServiceClient
   ) {
     this.jobId = jobId;
     this.source = source;
     this.sendMessage = sendMessage;
     this.traceOptions = traceOptions || {};
+    this.serviceClient = serviceClient;
   }
 
   /**
-   * Get the job ID
+   * Initialize step numbering from service (if available)
+   * Call this when resuming an existing trace
    */
-  getJobId(): string {
+  async initializeFromService(): Promise<void> {
+    if (!this.serviceClient) {
+      return;
+    }
+
+    try {
+      const lastStepNumber = await this.serviceClient.getLastStepNumber(this.jobId);
+      this.currentStepNumber = lastStepNumber;
+    } catch (error) {
+      console.warn('Failed to initialize from service, using in-memory state:', error);
+    }
+  }
+
+  /**
+   * Get the trace ID
+   */
+  getId(): string {
     return this.jobId;
   }
 
   /**
-   * Update the job
+   * Alias for getId() - for backward compatibility
+   * @deprecated Use getId() instead
    */
-  async updateJob(options: UpdateJobOptions): Promise<void> {
+  getJobId(): string {
+    return this.getId();
+  }
+
+  /**
+   * Get an existing step instance by step number
+   * Useful for resuming work on a step from another process/instance
+   * 
+   * @param stepNumber - The step number to retrieve
+   * @returns Step instance for the specified step number
+   * 
+   * @example
+   * ```typescript
+   * const step = trace.getStep(0);
+   * await step.update({ metadata: { progress: '50%' } });
+   * await step.finish();
+   * ```
+   */
+  getStep(stepNumber: number): Step {
+    const step = new Step(
+      this.jobId,
+      stepNumber,
+      this.source,
+      this.sendMessage,
+      false,
+      this.serviceClient // Pass service client for state checking
+    );
+    return step;
+  }
+
+  /**
+   * Update the trace
+   */
+  async update(options: UpdateJobOptions): Promise<void> {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaJobMessage = {
@@ -69,10 +124,18 @@ export class JobManager {
   }
 
   /**
+   * Alias for update() - for backward compatibility
+   * @deprecated Use update() instead
+   */
+  async updateJob(options: UpdateJobOptions): Promise<void> {
+    return this.update(options);
+  }
+
+  /**
    * Start the trace (set status to RUNNING)
    */
   async start(): Promise<void> {
-    await this.updateJob({ status: TraceFlowJobStatus.RUNNING });
+    await this.update({ status: TraceFlowJobStatus.RUNNING });
   }
 
   /**

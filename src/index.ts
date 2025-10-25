@@ -6,6 +6,10 @@
 export { TraceFlowClient } from './client';
 export { JobManager } from './job-manager';
 export { Step } from './step';
+export { TraceFlowServiceClient } from './service-client';
+export { TraceJobCleaner } from './trace-cleaner';
+export type { TraceState, StepState } from './service-client';
+export type { TraceCleanerConfig } from './trace-cleaner';
 
 // Re-export singleton methods for convenience
 import { TraceFlowClient } from './client';
@@ -56,6 +60,7 @@ export type {
   TraceFlowKafkaConfig,
   TraceFlowKafkaInstanceConfig,
   TraceFlowConfig,
+  TraceFlowCleanerConfig,
   CreateJobOptions,
   UpdateJobOptions,
   CreateStepOptions,

@@ -23,7 +23,7 @@ async function test01BasicTrace() {
     owner: 'test-runner',
     tags: ['test', 'basic'],
   });
-  console.log(`  Trace ID: ${trace1.getJobId()}`);
+  console.log(`  Trace ID: ${trace1.getId()}`);
 
   await trace1.start();
   console.log('  Status: RUNNING');

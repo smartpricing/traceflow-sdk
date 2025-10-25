@@ -24,7 +24,7 @@ async function test02AutoClose() {
     },
     { autoCloseSteps: true }
   );
-  console.log(`  Trace ID: ${trace1.getJobId()}`);
+  console.log(`  Trace ID: ${trace1.getId()}`);
   await trace1.start();
 
   const step1 = await trace1.step({ name: 'Step 1' });
@@ -48,7 +48,7 @@ async function test02AutoClose() {
     job_type: 'test_no_autoclose',
     title: 'Auto-Close Test - Disabled',
   });
-  console.log(`  Trace ID: ${trace2.getJobId()}`);
+  console.log(`  Trace ID: ${trace2.getId()}`);
   await trace2.start();
 
   const step4 = await trace2.step({ name: 'Step 1' });

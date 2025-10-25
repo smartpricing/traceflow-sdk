@@ -21,7 +21,7 @@ async function test06StepState() {
     job_type: 'test_step_state',
     title: 'Step State Test',
   });
-  console.log(`  Trace ID: ${trace1.getJobId()}`);
+  console.log(`  Trace ID: ${trace1.getId()}`);
   await trace1.start();
 
   const step1 = await trace1.step({ name: 'State Test Step' });
@@ -54,7 +54,7 @@ async function test06StepState() {
     job_type: 'test_step_numbers',
     title: 'Step Numbers Test',
   });
-  console.log(`  Trace ID: ${trace2.getJobId()}`);
+  console.log(`  Trace ID: ${trace2.getId()}`);
   await trace2.start();
 
   const steps = [];

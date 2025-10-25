@@ -21,7 +21,7 @@ async function test05Logging() {
     job_type: 'test_step_logging',
     title: 'Step Logging Test',
   });
-  console.log(`  Trace ID: ${trace1.getJobId()}`);
+  console.log(`  Trace ID: ${trace1.getId()}`);
   await trace1.start();
 
   const step1 = await trace1.step({ name: 'Logging Test Step' });
@@ -49,7 +49,7 @@ async function test05Logging() {
     job_type: 'test_trace_logging',
     title: 'Trace Logging Test',
   });
-  console.log(`  Trace ID: ${trace2.getJobId()}`);
+  console.log(`  Trace ID: ${trace2.getId()}`);
   await trace2.start();
 
   await trace2.debug('Trace debug', { phase: 'initialization' });

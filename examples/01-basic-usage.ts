@@ -30,7 +30,7 @@ async function basicUsage() {
     description: 'Synchronize user data from external API',
     tags: ['sync', 'users'],
   });
-  console.log(`✓ Created trace: ${trace.getJobId()}\n`);
+  console.log(`✓ Created trace: ${trace.getId()}\n`);
 
   // 3. Start the trace
   await trace.start();

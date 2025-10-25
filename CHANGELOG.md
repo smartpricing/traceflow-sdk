@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### 1.0.5 (2025-10-25)
 
+### 1.0.5 (2025-10-25)
+
 ### Added
 - **Service Integration** - Optional integration with traceflow-service for state persistence:
   - `serviceUrl` configuration option for TraceFlow Service API

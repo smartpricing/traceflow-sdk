@@ -50,7 +50,7 @@ async function processUsers() {
   await step.finish({ validated: 50 });
   await trace.finish({ success: true });
   
-  console.log(`✓ Users processed (trace: ${trace.getJobId()})\n`);
+  console.log(`✓ Users processed (trace: ${trace.getId()})\n`);
 }
 
 async function processOrders() {
@@ -70,7 +70,7 @@ async function processOrders() {
   await step.finish({ validated: 25 });
   await trace.finish({ success: true });
   
-  console.log(`✓ Orders processed (trace: ${trace.getJobId()})\n`);
+  console.log(`✓ Orders processed (trace: ${trace.getId()})\n`);
 }
 
 if (require.main === module) {

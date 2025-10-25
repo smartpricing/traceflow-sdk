@@ -253,7 +253,7 @@ const trace = await client.trace({
   },
 });
 
-console.log(`Trace ID: ${trace.getJobId()}`);
+console.log(`Trace ID: ${trace.getId()}`);
 ```
 
 ### 3. Managing Trace Status
@@ -263,10 +263,10 @@ console.log(`Trace ID: ${trace.getJobId()}`);
 await trace.start();
 
 // Or update status manually
-await trace.updateJob({ status: TraceFlowJobStatus.RUNNING });
+await trace.update({ status: TraceFlowJobStatus.RUNNING });
 
 // Update with multiple fields
-await trace.updateJob({
+await trace.update({
   status: TraceFlowJobStatus.RUNNING,
   metadata: { progress: '50%' },
 });
@@ -423,12 +423,26 @@ await trace.cancel();
 Useful for updating a trace from another process or instance:
 
 ```typescript
-const existingTrace = client.getJobManager('existing-trace-uuid');
+// Get an existing trace by ID
+const existingTrace = client.getTrace('existing-trace-uuid');
 
-// Now you can update the trace
+// Update the trace
 await existingTrace.start();
-await existingTrace.complete({ success: true });
+
+// Get a specific step
+const step = existingTrace.getStep(0);
+await step.update({ metadata: { progress: '75%' } });
+await step.finish();
+
+// Complete the trace
+await existingTrace.finish({ success: true });
 ```
+
+**Use Cases:**
+- **Multi-service workflows:** Different services can work on the same trace
+- **Long-running jobs:** Resume a trace after process restart
+- **Distributed systems:** Update traces from different nodes
+- **Recovery:** Resume failed traces from their last state
 
 ## 📝 Complete Examples
 
@@ -442,6 +456,50 @@ Available examples:
 - **[05-error-handling.ts](./examples/05-error-handling.ts)** - Error handling and recovery
 - **[06-existing-kafka-instance.ts](./examples/06-existing-kafka-instance.ts)** - Using existing Kafka connections
 - **[07-complex-workflow.ts](./examples/07-complex-workflow.ts)** - Real-world ETL pipeline
+- **[08-resuming-traces.ts](./examples/08-resuming-traces.ts)** - Resuming traces across services
+- **[09-state-recovery.ts](./examples/09-state-recovery.ts)** - State recovery with TraceFlow Service
+
+### Service Integration
+
+**For state persistence and recovery after pod restarts**, see:
+- **[Service Integration Guide](./SERVICE_INTEGRATION.md)** - Complete guide
+- Integrate with your `traceflow-service` for persistent state
+- Resume traces after pod crashes
+- Query trace/step state from Scylla
+
+### Automatic Trace Cleanup
+
+**Integrated auto-cleanup for inactive traces**:
+
+The SDK includes an integrated cleaner that can automatically close inactive traces. This is useful to prevent "zombie" traces from pod crashes or forgotten completions.
+
+**Pattern:**
+- **Main service** (tracing): cleaner **disabled**
+- **Cron service** (cleanup): cleaner **enabled**
+
+```typescript
+// Main service - tracing only
+const client = initializeTraceFlow({
+  brokers: ['localhost:9092'],
+  serviceUrl: 'http://traceflow-service:3000',
+  // NO cleanerConfig - cleaner disabled
+}, 'main-service');
+
+// Cron service - cleanup only
+const cronClient = initializeTraceFlow({
+  brokers: ['localhost:9092'],
+  serviceUrl: 'http://traceflow-service:3000', // Required
+  cleanerConfig: {
+    inactivityTimeoutSeconds: 1800,  // Close after 30 min
+    cleanupIntervalSeconds: 300,     // Run every 5 min
+    autoStart: true,                 // Start on connect
+  },
+}, 'cron-cleaner');
+```
+
+**See:**
+- **[10-trace-cleaner.ts](./examples/10-trace-cleaner.ts)** - Complete examples
+- **[Service Integration Guide](./SERVICE_INTEGRATION.md)** - API requirements
 
 ### Running Examples
 
@@ -554,10 +612,11 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 
 - `connect(): Promise<void>` - Connect to Kafka
 - `disconnect(): Promise<void>` - Disconnect from Kafka
-- `trace(options: CreateJobOptions): Promise<JobManager>` - Start a new trace
-- `traceJob(options: CreateJobOptions): Promise<JobManager>` - Alias for trace() (deprecated)
-- `createJob(options: CreateJobOptions): Promise<JobManager>` - Alias for trace() (deprecated)
-- `getJobManager(jobId: string, source?: string): JobManager` - Get manager for existing trace
+- `trace(options: CreateJobOptions, traceOptions?: TraceOptions): Promise<JobManager>` - Start a new trace
+- `getTrace(jobId: string, source?: string, traceOptions?: TraceOptions): JobManager` - Get existing trace
+- `traceJob(options: CreateJobOptions, traceOptions?: TraceOptions): Promise<JobManager>` - Alias for trace() (deprecated)
+- `createJob(options: CreateJobOptions, traceOptions?: TraceOptions): Promise<JobManager>` - Alias for trace() (deprecated)
+- `getJobManager(jobId: string, source?: string, traceOptions?: TraceOptions): JobManager` - Alias for getTrace() (deprecated)
 - `isConnected(): boolean` - Check if connected
 - `getTopic(): string` - Get configured topic
 - `getDefaultSource(): string | undefined` - Get default source
@@ -566,9 +625,12 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 
 #### Trace Methods
 
-- `getJobId(): string` - Get trace ID
+- `getId(): string` - Get the trace ID
+- `getJobId(): string` - Alias for getId() (deprecated)
+- `getStep(stepNumber: number): Step` - Get existing step by number
 - `start(): Promise<void>` - Start trace (set status to RUNNING)
-- `updateJob(options: UpdateJobOptions): Promise<void>` - Update trace
+- `update(options: UpdateJobOptions): Promise<void>` - Update trace
+- `updateJob(options: UpdateJobOptions): Promise<void>` - Alias for update() (deprecated)
 - `finish(result?: any): Promise<void>` - Finish trace successfully
 - `complete(result?: any): Promise<void>` - Complete trace (same as finish)
 - `fail(error: string): Promise<void>` - Fail trace

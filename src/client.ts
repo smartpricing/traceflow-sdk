@@ -13,6 +13,8 @@ import {
   TraceFlowJobStatus,
 } from './types';
 import { JobManager } from './job-manager';
+import { TraceFlowServiceClient } from './service-client';
+import { TraceJobCleaner } from './trace-cleaner';
 
 /**
  * Type guard to check if config is KafkaConfig
@@ -33,10 +35,19 @@ export class TraceFlowClient {
   private connected: boolean = false;
   private defaultSource?: string;
   private ownsProducer: boolean = true; // Track if we created the producer or received it
+  private serviceClient?: TraceFlowServiceClient; // Optional service client for state recovery
+  private cleaner?: TraceJobCleaner; // Optional cleaner for auto-cleanup
+  private config: TraceFlowConfig; // Store config for cleaner initialization
 
   constructor(config: TraceFlowConfig, defaultSource?: string) {
+    this.config = config;
     this.topic = config.topic || 'traceflow'; // Default to 'traceflow'
     this.defaultSource = defaultSource;
+
+    // Initialize service client if URL provided
+    if ('serviceUrl' in config && config.serviceUrl) {
+      this.serviceClient = new TraceFlowServiceClient(config.serviceUrl);
+    }
 
     if (isKafkaConfig(config)) {
       // Create new Kafka instance from config
@@ -120,6 +131,21 @@ export class TraceFlowClient {
     }
     
     this.connected = true;
+
+    // Initialize cleaner if config provided and serviceUrl is available
+    if ('cleanerConfig' in this.config && this.config.cleanerConfig && this.serviceClient) {
+      const cleanerConfig = this.config.cleanerConfig;
+      
+      this.cleaner = new TraceJobCleaner({
+        serviceClient: this.serviceClient,
+        kafkaProducer: this.producer,
+        topic: this.topic,
+        inactivityTimeoutSeconds: cleanerConfig.inactivityTimeoutSeconds,
+        cleanupIntervalSeconds: cleanerConfig.cleanupIntervalSeconds,
+        autoStart: cleanerConfig.autoStart !== false, // Default to true
+        logger: cleanerConfig.logger,
+      });
+    }
   }
 
   /**
@@ -129,6 +155,11 @@ export class TraceFlowClient {
   async disconnect(): Promise<void> {
     if (!this.connected) {
       return;
+    }
+
+    // Stop cleaner if running
+    if (this.cleaner) {
+      this.cleaner.stop();
     }
 
     if (this.ownsProducer) {
@@ -217,9 +248,53 @@ export class TraceFlowClient {
   /**
    * Get a JobManager for an existing job
    * Useful if you need to update a job from a different process/instance
+   * 
+   * @param jobId - The job ID (UUID)
+   * @param source - Optional source identifier
+   * @param traceOptions - Optional trace options
+   * @returns JobManager instance for the existing job
+   * 
+   * @example
+   * ```typescript
+   * // In another process/service, resume an existing trace
+   * const trace = client.getTrace('existing-job-uuid');
+   * await trace.update({ status: 'RUNNING' });
+   * 
+   * const step = trace.getStep(0);
+   * await step.finish();
+   * ```
+   */
+  getTrace(jobId: string, source?: string, traceOptions?: TraceOptions): JobManager {
+    return new JobManager(
+      jobId,
+      source || this.defaultSource,
+      this.sendMessage.bind(this),
+      traceOptions,
+      this.serviceClient // Pass service client for state recovery
+    );
+  }
+
+  /**
+   * Alias for getTrace() - for backward compatibility
+   * @deprecated Use getTrace() instead
    */
   getJobManager(jobId: string, source?: string, traceOptions?: TraceOptions): JobManager {
-    return new JobManager(jobId, source || this.defaultSource, this.sendMessage.bind(this), traceOptions);
+    return this.getTrace(jobId, source, traceOptions);
+  }
+
+  /**
+   * Get the service client (if configured)
+   * Useful for querying trace/step state
+   */
+  getServiceClient(): TraceFlowServiceClient | undefined {
+    return this.serviceClient;
+  }
+
+  /**
+   * Check if service client is configured
+   */
+  hasServiceClient(): boolean {
+    return !!this.serviceClient;
   }
 
   /**
@@ -252,6 +327,21 @@ export class TraceFlowClient {
    */
   getDefaultSource(): string | undefined {
     return this.defaultSource;
+  }
+
+  /**
+   * Get the cleaner instance (if configured)
+   * Useful for manual control of the cleaner
+   */
+  getCleaner(): TraceJobCleaner | undefined {
+    return this.cleaner;
+  }
+
+  /**
+   * Check if cleaner is configured and running
+   */
+  hasActiveCleaner(): boolean {
+    return !!this.cleaner && this.cleaner.isActive();
   }
 }
 

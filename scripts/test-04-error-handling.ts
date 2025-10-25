@@ -21,7 +21,7 @@ async function test04ErrorHandling() {
     job_type: 'test_step_failure',
     title: 'Step Failure Test',
   });
-  console.log(`  Trace ID: ${trace1.getJobId()}`);
+  console.log(`  Trace ID: ${trace1.getId()}`);
   await trace1.start();
 
   const step1 = await trace1.step({ name: 'Successful Step' });
@@ -48,7 +48,7 @@ async function test04ErrorHandling() {
     job_type: 'test_trace_failure',
     title: 'Trace Failure Test',
   });
-  console.log(`  Trace ID: ${trace2.getJobId()}`);
+  console.log(`  Trace ID: ${trace2.getId()}`);
   await trace2.start();
 
   const step4 = await trace2.step({ name: 'Step 1' });

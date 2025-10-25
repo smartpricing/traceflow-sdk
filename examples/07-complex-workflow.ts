@@ -40,7 +40,7 @@ async function complexWorkflow() {
     },
   });
 
-  console.log(`✓ Created trace: ${trace.getJobId()}`);
+  console.log(`✓ Created trace: ${trace.getId()}`);
   console.log(`  Job type: etl_pipeline`);
   console.log(`  Owner: data-team\n`);
 

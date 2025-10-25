@@ -46,7 +46,7 @@ async function existingKafkaInstance() {
   });
 
   await trace.start();
-  console.log(`✓ Trace started: ${trace.getJobId()}\n`);
+  console.log(`✓ Trace started: ${trace.getId()}\n`);
 
   const step = await trace.step({ name: 'Process Data' });
   await step.info('Processing with shared Kafka connection...');

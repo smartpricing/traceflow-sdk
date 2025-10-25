@@ -38,7 +38,7 @@ async function test10Metadata() {
       data_source: 'postgresql',
     },
   });
-  console.log(`  Trace ID: ${trace1.getJobId()}`);
+  console.log(`  Trace ID: ${trace1.getId()}`);
   console.log(`  Tags: ${JSON.stringify(['test', 'metadata', 'rich', 'comprehensive'])}`);
   console.log(`  Metadata keys: ${Object.keys({environment:'', region:'', version:'', priority:'', cost_center:''}).length}`);
   console.log(`  Params keys: ${Object.keys({batch_size:0, retry_count:0, timeout_seconds:0, enable_cache:false, data_source:''}).length}`);
@@ -106,7 +106,7 @@ async function test10Metadata() {
       },
     },
   });
-  console.log(`  Trace ID: ${trace2.getJobId()}`);
+  console.log(`  Trace ID: ${trace2.getId()}`);
   await trace2.start();
 
   const step2 = await trace2.step({ name: 'Complex Data Step' });

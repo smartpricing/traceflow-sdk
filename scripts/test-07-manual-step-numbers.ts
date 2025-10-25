@@ -21,7 +21,7 @@ async function test07ManualStepNumbers() {
     job_type: 'test_manual_numbers',
     title: 'Manual Step Numbers Test',
   });
-  console.log(`  Trace ID: ${trace1.getJobId()}`);
+  console.log(`  Trace ID: ${trace1.getId()}`);
   await trace1.start();
 
   const step1 = await trace1.step({ 
@@ -55,7 +55,7 @@ async function test07ManualStepNumbers() {
     job_type: 'test_mixed_numbers',
     title: 'Mixed Step Numbers Test',
   });
-  console.log(`  Trace ID: ${trace2.getJobId()}`);
+  console.log(`  Trace ID: ${trace2.getId()}`);
   await trace2.start();
 
   const s1 = await trace2.step({ name: 'Auto 0' });

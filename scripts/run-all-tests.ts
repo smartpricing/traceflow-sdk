@@ -13,6 +13,7 @@ import { test07ManualStepNumbers } from './test-07-manual-step-numbers';
 import { test08MultiplTraces } from './test-08-multiple-traces';
 import { test09LargeWorkflow } from './test-09-large-workflow';
 import { test10Metadata } from './test-10-metadata';
+import { test11ResumingTraces } from './test-11-resuming-traces';
 
 async function runAllTests() {
   console.log('╔════════════════════════════════════════════════════════════╗');
@@ -30,6 +31,7 @@ async function runAllTests() {
     { name: 'TEST 08: Multiple Concurrent Traces', fn: test08MultiplTraces },
     { name: 'TEST 09: Large Workflow', fn: test09LargeWorkflow },
     { name: 'TEST 10: Metadata & Rich Data', fn: test10Metadata },
+    { name: 'TEST 11: Resuming Traces & Steps', fn: test11ResumingTraces },
   ];
 
   let passed = 0;

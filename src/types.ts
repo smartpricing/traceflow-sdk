@@ -45,6 +45,34 @@ export enum TraceFlowEventType {
 }
 
 /**
+ * Trace cleaner configuration
+ */
+export interface TraceFlowCleanerConfig {
+  /**
+   * Inactivity timeout in seconds - traces inactive longer than this will be closed
+   * Default: 1800 seconds (30 minutes)
+   */
+  inactivityTimeoutSeconds?: number;
+
+  /**
+   * Cron interval in seconds - how often to run the cleanup job
+   * Default: 300 seconds (5 minutes)
+   */
+  cleanupIntervalSeconds?: number;
+
+  /**
+   * Whether to automatically start the cleaner when client connects
+   * Default: true
+   */
+  autoStart?: boolean;
+
+  /**
+   * Custom logger function (optional)
+   */
+  logger?: (message: string, data?: any) => void;
+}
+
+/**
  * Kafka configuration
  */
 export interface TraceFlowKafkaConfig {
@@ -57,6 +85,8 @@ export interface TraceFlowKafkaConfig {
     password: string;
   };
   ssl?: boolean;
+  serviceUrl?: string; // Optional: TraceFlow Service API URL for state recovery
+  cleanerConfig?: TraceFlowCleanerConfig; // Optional: Auto-cleanup configuration
 }
 
 /**
@@ -66,6 +96,8 @@ export interface TraceFlowKafkaInstanceConfig {
   topic?: string; // Optional - defaults to 'traceflow'
   kafka?: any; // Kafka instance from @confluentinc/kafka-javascript
   producer?: any; // Producer instance from @confluentinc/kafka-javascript
+  serviceUrl?: string; // Optional: TraceFlow Service API URL for state recovery
+  cleanerConfig?: TraceFlowCleanerConfig; // Optional: Auto-cleanup configuration
 }
 
 /**

@@ -21,7 +21,7 @@ async function test03PendingSteps() {
     job_type: 'test_pending_finish',
     title: 'Pending Steps - Finish',
   });
-  console.log(`  Trace ID: ${trace1.getJobId()}`);
+  console.log(`  Trace ID: ${trace1.getId()}`);
   await trace1.start();
 
   const s1 = await trace1.step({ name: 'Step 1' });
@@ -45,7 +45,7 @@ async function test03PendingSteps() {
     job_type: 'test_pending_fail',
     title: 'Pending Steps - Fail',
   });
-  console.log(`  Trace ID: ${trace2.getJobId()}`);
+  console.log(`  Trace ID: ${trace2.getId()}`);
   await trace2.start();
 
   const s4 = await trace2.step({ name: 'Step 1' });

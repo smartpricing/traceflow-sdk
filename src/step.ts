@@ -6,31 +6,68 @@ import {
   TraceFlowLogLevel,
   TraceFlowKafkaLogMessage,
 } from './types';
+import { TraceFlowServiceClient } from './service-client';
 
 /**
  * Step - Represents a single step in a trace
  * Provides methods to manage the step's lifecycle
+ * 
+ * Can be used for both new steps and existing steps (for updates from other processes)
  */
 export class Step {
   private jobId: string;
   private stepNumber: number;
   private source?: string;
   private closed: boolean = false;
+  private serviceClient?: TraceFlowServiceClient;
   private sendMessage: (
     type: 'job' | 'step' | 'log',
     data: any
   ) => Promise<void>;
 
+  /**
+   * Create a Step instance
+   * 
+   * @param jobId - The job/trace ID
+   * @param stepNumber - The step number
+   * @param source - Optional source identifier
+   * @param sendMessage - Function to send Kafka messages
+   * @param isExisting - If true, this is an existing step (don't track as new)
+   * @param serviceClient - Optional service client for state checking
+   */
   constructor(
     jobId: string,
     stepNumber: number,
     source: string | undefined,
-    sendMessage: (type: 'job' | 'step' | 'log', data: any) => Promise<void>
+    sendMessage: (type: 'job' | 'step' | 'log', data: any) => Promise<void>,
+    isExisting: boolean = false,
+    serviceClient?: TraceFlowServiceClient
   ) {
     this.jobId = jobId;
     this.stepNumber = stepNumber;
     this.source = source;
     this.sendMessage = sendMessage;
+    this.serviceClient = serviceClient;
+    // If this is an existing step being retrieved, we don't know if it's closed
+    // User should be careful when using getStep() on existing steps
+    this.closed = false;
+  }
+
+  /**
+   * Check if step is closed by querying the service (if available)
+   * Falls back to in-memory state if service is not configured
+   */
+  async isClosedFromService(): Promise<boolean> {
+    if (!this.serviceClient) {
+      return this.closed;
+    }
+
+    try {
+      return await this.serviceClient.isStepClosed(this.jobId, this.stepNumber);
+    } catch (error) {
+      console.warn('Failed to check step state from service, using in-memory state:', error);
+      return this.closed;
+    }
   }
 
   /**

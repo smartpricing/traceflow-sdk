@@ -173,7 +173,7 @@ export class TraceFlowClient {
    * Send a message to Kafka
    */
   private async sendMessage(
-    type: 'job' | 'step' | 'log',
+    type: 'trace' | 'step' | 'log',
     data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ): Promise<void> {
     if (!this.connected) {
@@ -223,7 +223,7 @@ export class TraceFlowClient {
       params: options.params,
     };
 
-    await this.sendMessage('job', data);
+    await this.sendMessage('trace', data);
 
     // Return a JobManager for this job
     return new JobManager(jobId, source, this.sendMessage.bind(this), traceOptions);
@@ -302,7 +302,7 @@ export class TraceFlowClient {
    * Use this if you need more control over the message format
    */
   async sendRawMessage(
-    type: 'job' | 'step' | 'log',
+    type: 'trace' | 'step' | 'log',
     data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ): Promise<void> {
     await this.sendMessage(type, data);

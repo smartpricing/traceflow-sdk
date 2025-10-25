@@ -21,7 +21,7 @@ export class Step {
   private closed: boolean = false;
   private serviceClient?: TraceFlowServiceClient;
   private sendMessage: (
-    type: 'job' | 'step' | 'log',
+    type: 'trace' | 'step' | 'log',
     data: any
   ) => Promise<void>;
 
@@ -39,7 +39,7 @@ export class Step {
     jobId: string,
     stepNumber: number,
     source: string | undefined,
-    sendMessage: (type: 'job' | 'step' | 'log', data: any) => Promise<void>,
+    sendMessage: (type: 'trace' | 'step' | 'log', data: any) => Promise<void>,
     isExisting: boolean = false,
     serviceClient?: TraceFlowServiceClient
   ) {

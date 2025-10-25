@@ -27,7 +27,7 @@ export class JobManager {
   private traceOptions: TraceOptions;
   private serviceClient?: TraceFlowServiceClient; // Optional service client
   private sendMessage: (
-    type: 'job' | 'step' | 'log',
+    type: 'trace' | 'step' | 'log',
     data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ) => Promise<void>;
 
@@ -35,7 +35,7 @@ export class JobManager {
     jobId: string,
     source: string | undefined,
     sendMessage: (
-      type: 'job' | 'step' | 'log',
+      type: 'trace' | 'step' | 'log',
       data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
     ) => Promise<void>,
     traceOptions?: TraceOptions,
@@ -120,7 +120,7 @@ export class JobManager {
       started_at: options.started_at ? (options.started_at instanceof Date ? options.started_at.toISOString() : options.started_at) : undefined, 
       finished_at: options.finished_at ? (options.finished_at instanceof Date ? options.finished_at.toISOString() : options.finished_at) : undefined,
     };
-    await this.sendMessage('job', data);
+    await this.sendMessage('trace', data);
   }
 
   /**
@@ -164,7 +164,7 @@ export class JobManager {
       ...(result !== undefined && { result }),
     };
 
-    await this.sendMessage('job', data);
+    await this.sendMessage('trace', data);
   }
 
   /**
@@ -209,7 +209,7 @@ export class JobManager {
       error,
     };
 
-    await this.sendMessage('job', data);
+    await this.sendMessage('trace', data);
   }
 
   /**
@@ -237,7 +237,7 @@ export class JobManager {
       finished_at: now,
     };
 
-    await this.sendMessage('job', data);
+    await this.sendMessage('trace', data);
   }
 
   /**

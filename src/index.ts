@@ -5,6 +5,7 @@
 
 export { TraceFlowClient } from './client';
 export { JobManager } from './job-manager';
+export { Step } from './step';
 
 // Re-export singleton methods for convenience
 import { TraceFlowClient } from './client';

@@ -5,11 +5,13 @@ import {
   CreateStepOptions,
   UpdateStepOptions,
   CreateLogOptions,
+  TraceOptions,
   TraceFlowKafkaJobMessage,
   TraceFlowKafkaStepMessage,
   TraceFlowKafkaLogMessage,
   UpdateJobOptions,
 } from './types';
+import { Step } from './step';
 
 /**
  * JobManager - Manages a specific job and its steps
@@ -19,6 +21,9 @@ export class JobManager {
   private jobId: string;
   private source?: string;
   private currentStepNumber: number = -1;
+  private currentStep?: Step;
+  private openSteps: Step[] = []; // Track all open steps
+  private traceOptions: TraceOptions;
   private sendMessage: (
     type: 'job' | 'step' | 'log',
     data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
@@ -30,11 +35,13 @@ export class JobManager {
     sendMessage: (
       type: 'job' | 'step' | 'log',
       data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
-    ) => Promise<void>
+    ) => Promise<void>,
+    traceOptions?: TraceOptions
   ) {
     this.jobId = jobId;
     this.source = source;
     this.sendMessage = sendMessage;
+    this.traceOptions = traceOptions || {};
   }
 
   /**
@@ -78,8 +85,12 @@ export class JobManager {
 
   /**
    * Complete the trace successfully
+   * Automatically closes all pending steps
    */
   async complete(result?: any): Promise<void> {
+    // Close all pending steps first
+    await this.closeAllPendingSteps();
+
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaJobMessage = {
@@ -119,8 +130,12 @@ export class JobManager {
 
   /**
    * Fail the trace
+   * Automatically closes all pending steps
    */
   async fail(error: string): Promise<void> {
+    // Close all pending steps first
+    await this.closeAllPendingSteps();
+
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaJobMessage = {
@@ -144,8 +159,12 @@ export class JobManager {
 
   /**
    * Cancel the trace
+   * Automatically closes all pending steps
    */
   async cancel(): Promise<void> {
+    // Close all pending steps first
+    await this.closeAllPendingSteps();
+
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaJobMessage = {
@@ -169,9 +188,15 @@ export class JobManager {
   /**
    * Trace a new step
    * If step_number is not provided, it will be auto-incremented
+   * Returns a Step instance for managing the step
    */
-  async step(options: CreateStepOptions = {}): Promise<number> {
+  async step(options: CreateStepOptions = {}): Promise<Step> {
     const now = new Date().toISOString();
+
+    // Auto-close previous step if option is enabled
+    if (this.traceOptions.autoCloseSteps && this.currentStep && !this.currentStep.isClosed()) {
+      await this.currentStep.complete();
+    }
 
     // Auto-increment step number if not provided
     let stepNumber: number;
@@ -200,22 +225,51 @@ export class JobManager {
     };
 
     await this.sendMessage('step', data);
-    return stepNumber;
+
+    // Create and store the Step instance
+    const step = new Step(this.jobId, stepNumber, this.source, this.sendMessage);
+    this.currentStep = step;
+    
+    // Track this step in openSteps
+    this.openSteps.push(step);
+
+    return step;
+  }
+
+  /**
+   * Close all pending steps
+   * Called automatically when trace finishes/fails/cancels
+   */
+  private async closeAllPendingSteps(): Promise<void> {
+    // Sort steps by step_number to maintain order (by updated_at flow)
+    const pendingSteps = this.openSteps.filter(step => !step.isClosed());
+    
+    for (const step of pendingSteps) {
+      try {
+        await step.complete();
+      } catch (error) {
+        // Ignore errors for already closed steps
+        console.warn(`Failed to close step ${step.getStepNumber()}:`, error);
+      }
+    }
+    
+    // Clear the openSteps array
+    this.openSteps = [];
   }
 
   /**
    * Alias for step() - for backward compatibility
-   * @deprecated Use step() instead
+   * @deprecated Use step() instead - returns Step instance now
    */
-  async traceStep(options: CreateStepOptions = {}): Promise<number> {
+  async traceStep(options: CreateStepOptions = {}): Promise<Step> {
     return this.step(options);
   }
 
   /**
    * Alias for step() - for backward compatibility
-   * @deprecated Use step() instead
+   * @deprecated Use step() instead - returns Step instance now
    */
-  async createStep(options: CreateStepOptions = {}): Promise<number> {
+  async createStep(options: CreateStepOptions = {}): Promise<Step> {
     return this.step(options);
   }
 

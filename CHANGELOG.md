@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### 1.0.3 (2025-10-24)
 
+### Added
+- **Default Topic** - Topic now defaults to `'traceflow'` if not specified
+  - Simplifies initialization: just specify `brokers`
+  - Can still override with custom topic if needed
+- **Auto-Close Pending Steps** - When trace finishes/fails/cancels, all pending steps are automatically closed
+  - Steps are closed in order by `step_number` (maintaining `updated_at` flow)
+  - Prevents orphaned open steps
+- **Step Class** - Object-oriented API for managing steps:
+  - `step()` now returns a `Step` instance
+  - Step methods: `finish()`, `complete()`, `fail()`, `update()`
+  - Step logging: `step.info()`, `step.warn()`, `step.error()`, `step.debug()`
+  - `getStepNumber()` - Get step number
+  - `isClosed()` - Check if step is closed
+- **Auto-Close Steps** - New `TraceOptions` with `autoCloseSteps`:
+  - Set `autoCloseSteps: true` to automatically complete previous step when creating a new one
+  - Useful for sequential workflows where you forget to close steps
+  - Example: `await client.trace({ ... }, { autoCloseSteps: true })`
+- New example file `step-class-usage.ts` demonstrating Step class and auto-close
+
+### Changed
+- **Breaking Change**: `step()` now returns `Step` instance instead of `number`
+  - Old: `const stepNum = await trace.step({ ... })`
+  - New: `const step = await trace.step({ ... })`
+- `trace()` now accepts optional `TraceOptions` parameter
+- `getJobManager()` now accepts optional `TraceOptions` parameter
+- Legacy methods (`finishStep`, `completeStep`, `failStep`, `updateStep`) still work for backward compatibility
+
+### Improved
+- More intuitive API with fluent step management
+- Better error handling with step state tracking
+- Documentation updated with new Step class examples
+
 ## [1.0.2] - 2025-10-24
 
 ### Added

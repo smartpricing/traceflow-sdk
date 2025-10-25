@@ -34,7 +34,7 @@ Your `traceflow-service` should expose REST API endpoints:
 
 // GET /api/traces/inactive?seconds=1800&minutes=30&statuses=IN_PROGRESS&limit=100
 // Response: { traces: InactiveTrace[] }
-// For TraceJobCleaner - returns traces inactive for specified time
+// For TraceCleaner - returns traces inactive for specified time
 // Parameters:
 //   - seconds: inactivity timeout in seconds (required by SDK)
 //   - minutes: alternative to seconds (optional, service can support both)
@@ -43,7 +43,7 @@ Your `traceflow-service` should expose REST API endpoints:
 
 // GET /api/traces/:traceId/steps/inactive?seconds=1800&minutes=30&statuses=IN_PROGRESS
 // Response: { steps: InactiveStep[] }
-// For TraceJobCleaner - returns inactive steps for a trace
+// For TraceCleaner - returns inactive steps for a trace
 // Parameters:
 //   - seconds: inactivity timeout in seconds (required by SDK)
 //   - minutes: alternative to seconds (optional, service can support both)
@@ -84,7 +84,7 @@ const client = new TraceFlowClient({
 
 ```typescript
 // Works the same with or without service
-const trace = await client.trace({ job_type: 'sync' });
+const trace = await client.trace({ trace_type: 'sync' });
 await trace.start();
 
 const step = await trace.step({ name: 'Process' });
@@ -97,7 +97,7 @@ await trace.finish();
 
 ```typescript
 // === POD 1 (before crash) ===
-const trace = await client.trace({ job_type: 'etl', title: 'ETL Job' });
+const trace = await client.trace({ trace_type: 'etl', title: 'ETL Trace' });
 const traceId = trace.getId(); // Save this somewhere (env, redis, etc.)
 
 await trace.start();
@@ -186,7 +186,7 @@ Your `traceflow-service` needs these endpoints:
 // Response
 {
   trace_id: string;
-  job_type?: string;
+  trace_type?: string;
   status: string;
   source?: string;
   created_at: string;
@@ -305,7 +305,7 @@ router.get('/traces/:traceId/steps/:stepNumber', async (req, res) => {
   res.json(result.first());
 });
 
-// Get inactive traces (for TraceJobCleaner)
+// Get inactive traces (for TraceCleaner)
 router.get('/traces/inactive', async (req, res) => {
   const { seconds, minutes, statuses, limit } = req.query;
   
@@ -329,8 +329,8 @@ router.get('/traces/inactive', async (req, res) => {
   
   // Find traces that haven't been updated recently
   const query = `
-    SELECT job_id, job_name, updated_at, metadata, status
-    FROM jobs
+    SELECT trace_id, trace_name, updated_at, metadata, status
+    FROM traces
     WHERE status IN ?
     AND updated_at < ?
     LIMIT ?
@@ -346,7 +346,7 @@ router.get('/traces/inactive', async (req, res) => {
   res.json({ traces: result.rows });
 });
 
-// Get inactive steps for a trace (for TraceJobCleaner)
+// Get inactive steps for a trace (for TraceCleaner)
 router.get('/traces/:traceId/steps/inactive', async (req, res) => {
   const { traceId } = req.params;
   const { seconds, minutes, statuses } = req.query;
@@ -367,9 +367,9 @@ router.get('/traces/:traceId/steps/inactive', async (req, res) => {
   const statusFilter = statuses ? statuses.split(',') : ['IN_PROGRESS'];
   
   const query = `
-    SELECT job_id, step_number, step_name, status, updated_at
+    SELECT trace_id, step_number, step_name, status, updated_at
     FROM steps
-    WHERE job_id = ?
+    WHERE trace_id = ?
     AND status IN ?
     AND updated_at < ?
     ALLOW FILTERING
@@ -508,7 +508,7 @@ const client = initializeTraceFlow({
 await client.connect();
 
 // Use for tracing...
-const trace = await client.trace({ job_type: 'etl' });
+const trace = await client.trace({ trace_type: 'etl' });
 ```
 
 ### Cron Service Configuration

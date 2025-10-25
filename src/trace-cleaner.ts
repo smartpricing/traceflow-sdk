@@ -1,10 +1,10 @@
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { TraceFlowServiceClient } from './service-client';
 import {
-  TraceFlowKafkaJobMessage,
+  TraceFlowKafkaTraceMessage,
   TraceFlowKafkaStepMessage,
   TraceFlowEventType,
-  TraceFlowJobStatus,
+  TraceFlowTraceStatus,
   TraceFlowStepStatus,
   TraceFlowKafkaLogMessage,
 } from './types';
@@ -34,7 +34,7 @@ export interface TraceCleanerConfig {
   inactivityTimeoutSeconds?: number;
 
   /**
-   * Cron interval in seconds - how often to run the cleanup job
+   * Cron interval in seconds - how often to run the cleanup traces
    * The cleaner will fetch traces that were last updated in this interval
    * Default: 300 seconds (5 minutes)
    */
@@ -53,21 +53,21 @@ export interface TraceCleanerConfig {
 }
 
 export interface InactiveTrace {
-  job_id: string;
-  job_name: string;
+  trace_id: string;
+  trace_name: string;
   updated_at: string;
   metadata?: any;
 }
 
 export interface InactiveStep {
-  job_id: string;
+  trace_id: string;
   step_number: number;
   step_name: string;
   status: string;
   updated_at: string;
 }
 
-export class TraceJobCleaner {
+export class TraceCleaner {
   private serviceClient: TraceFlowServiceClient;
   private kafkaProducer: KafkaJS.Producer;
   private topic: string;
@@ -101,11 +101,11 @@ export class TraceJobCleaner {
    */
   public start(): void {
     if (this.isRunning) {
-      this.logger('⚠️  TraceJobCleaner is already running');
+      this.logger('⚠️  TraceCleaner is already running');
       return;
     }
 
-    this.logger('🚀 Starting TraceJobCleaner', {
+    this.logger('🚀 Starting TraceCleaner', {
       inactivityTimeout: `${this.inactivityTimeoutSeconds} seconds (${Math.floor(this.inactivityTimeoutSeconds / 60)} minutes)`,
       cleanupInterval: `${this.cleanupIntervalSeconds} seconds (${Math.floor(this.cleanupIntervalSeconds / 60)} minutes)`,
       topic: this.topic,
@@ -132,7 +132,7 @@ export class TraceJobCleaner {
    */
   public stop(): void {
     if (!this.isRunning) {
-      this.logger('⚠️  TraceJobCleaner is not running');
+      this.logger('⚠️  TraceCleaner is not running');
       return;
     }
 
@@ -142,7 +142,7 @@ export class TraceJobCleaner {
     }
 
     this.isRunning = false;
-    this.logger('🛑 TraceJobCleaner stopped');
+    this.logger('🛑 TraceCleaner stopped');
   }
 
   /**
@@ -221,10 +221,10 @@ export class TraceJobCleaner {
   /**
    * Fetch open steps for a trace from the TraceFlow service
    */
-  private async fetchOpenSteps(jobId: string): Promise<InactiveStep[]> {
+  private async fetchOpenSteps(traceId: string): Promise<InactiveStep[]> {
     try {
       const response = await fetch(
-        `${this.serviceClient['baseUrl']}/api/traces/${jobId}/steps/inactive?seconds=${this.inactivityTimeoutSeconds}`
+        `${this.serviceClient['baseUrl']}/api/traces/${traceId}/steps/inactive?seconds=${this.inactivityTimeoutSeconds}`
       );
 
       if (!response.ok) {
@@ -234,7 +234,7 @@ export class TraceJobCleaner {
       const data = await response.json();
       return data.steps || [];
     } catch (error) {
-      this.logger(`❌ Error fetching open steps for trace ${jobId}:`, error);
+      this.logger(`❌ Error fetching open steps for trace ${traceId}:`, error);
       return [];
     }
   }
@@ -243,28 +243,28 @@ export class TraceJobCleaner {
    * Close an inactive trace and all its pending steps
    */
   private async closeInactiveTrace(trace: InactiveTrace): Promise<void> {
-    const jobId = trace.job_id;
+    const traceId = trace.trace_id;
     const now = new Date();
 
-    this.logger(`🔒 Closing inactive trace: ${jobId}`);
+    this.logger(`🔒 Closing inactive trace: ${traceId}`);
 
     try {
       // 1. Fetch all open steps for this trace from the service
-      const openSteps = await this.fetchOpenSteps(jobId);
+      const openSteps = await this.fetchOpenSteps(traceId);
 
       // 2. Close all open steps via Kafka
       for (const step of openSteps) {
-        await this.closeStep(jobId, step, now);
+        await this.closeStep(traceId, step, now);
       }
 
       // 3. Close the trace itself via Kafka
-      await this.closeTrace(jobId, trace, now);
+      await this.closeTrace(traceId, trace, now);
 
       this.logger(
-        `✅ Successfully closed trace ${jobId} with ${openSteps.length} steps`
+        `✅ Successfully closed trace ${traceId} with ${openSteps.length} steps`
       );
     } catch (error) {
-      this.logger(`❌ Error closing trace ${jobId}:`, error);
+      this.logger(`❌ Error closing trace ${traceId}:`, error);
       throw error;
     }
   }
@@ -273,7 +273,7 @@ export class TraceJobCleaner {
    * Close a step by sending Kafka message
    */
   private async closeStep(
-    jobId: string,
+    traceId: string,
     step: InactiveStep,
     now: Date
   ): Promise<void> {
@@ -281,7 +281,7 @@ export class TraceJobCleaner {
 
     // Send Kafka message to update the step
     const stepMessage: TraceFlowKafkaStepMessage = {
-      job_id: jobId,
+      trace_id: traceId,
       step_number: stepNumber,
       status: TraceFlowStepStatus.FAILED,
       finished_at: now.toISOString(),
@@ -292,15 +292,15 @@ export class TraceJobCleaner {
       topic: this.topic,
       messages: [
         {
-          key: jobId,
-          value: JSON.stringify(stepMessage),
+          key: traceId,
+          value: JSON.stringify({ type: 'step', data: stepMessage }),
         },
       ],
     });
 
     // Send log message
     await this.createLog(
-      jobId,
+      traceId,
       stepNumber,
       'error',
       'Step automatically closed due to trace inactivity'
@@ -311,14 +311,14 @@ export class TraceJobCleaner {
    * Close a trace by sending Kafka message
    */
   private async closeTrace(
-    jobId: string,
+    traceId: string,
     trace: InactiveTrace,
     now: Date
   ): Promise<void> {
     // Send Kafka message to update the trace
-    const jobMessage: TraceFlowKafkaJobMessage = {
-      job_id: jobId,
-      status: TraceFlowJobStatus.FAILED,
+    const traceMessage: TraceFlowKafkaTraceMessage = {
+      trace_id: traceId,
+      status: TraceFlowTraceStatus.FAILED,
       finished_at: now.toISOString(),
       updated_at: now.toISOString(),
     };
@@ -327,15 +327,15 @@ export class TraceJobCleaner {
       topic: this.topic,
       messages: [
         {
-          key: jobId,
-          value: JSON.stringify(jobMessage),
+          key: traceId,
+          value: JSON.stringify({ type: 'trace', data: traceMessage }),
         },
       ],
     });
 
     // Send log message
     await this.createLog(
-      jobId,
+      traceId,
       null,
       'warn',
       `Trace automatically closed due to inactivity (timeout: ${this.inactivityTimeoutSeconds} seconds)`
@@ -346,15 +346,15 @@ export class TraceJobCleaner {
    * Create a log entry via Kafka
    */
   private async createLog(
-    jobId: string,
+    traceId: string,
     stepNumber: number | null,
     level: string,
     message: string
   ): Promise<void> {
     const now = new Date();
 
-    const logMessage:TraceFlowKafkaLogMessage = {
-      job_id: jobId,
+    const logMessage: TraceFlowKafkaLogMessage = {
+      trace_id: traceId,
       log_time: now.toISOString(),
       step_number: stepNumber || undefined,
       level,
@@ -368,8 +368,8 @@ export class TraceJobCleaner {
       topic: this.topic,
       messages: [
         {
-          key: jobId,
-          value: JSON.stringify(logMessage),
+          key: traceId,
+          value: JSON.stringify({ type: 'log', data: logMessage }),
         },
       ],
     });

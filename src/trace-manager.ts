@@ -1,25 +1,25 @@
 import { v4 as uuidv4 } from 'uuid';
 import {
-  TraceFlowJobStatus,
+  TraceFlowTraceStatus,
   TraceFlowStepStatus,
   CreateStepOptions,
   UpdateStepOptions,
   CreateLogOptions,
   TraceOptions,
-  TraceFlowKafkaJobMessage,
+  TraceFlowKafkaTraceMessage,
   TraceFlowKafkaStepMessage,
   TraceFlowKafkaLogMessage,
-  UpdateJobOptions,
+  UpdateTraceOptions,
 } from './types';
 import { Step } from './step';
 import { TraceFlowServiceClient } from './service-client';
 
 /**
- * JobManager - Manages a specific job and its steps
+ * TraceManager - Manages a specific trace and its steps
  * Provides auto-increment logic for step numbers
  */
-export class JobManager {
-  private jobId: string;
+export class TraceManager {
+  private traceId: string;
   private source?: string;
   private currentStepNumber: number = -1;
   private currentStep?: Step;
@@ -28,20 +28,20 @@ export class JobManager {
   private serviceClient?: TraceFlowServiceClient; // Optional service client
   private sendMessage: (
     type: 'trace' | 'step' | 'log',
-    data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
+    data: TraceFlowKafkaTraceMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
   ) => Promise<void>;
 
   constructor(
-    jobId: string,
+    traceId: string,
     source: string | undefined,
     sendMessage: (
       type: 'trace' | 'step' | 'log',
-      data: TraceFlowKafkaJobMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
+      data: TraceFlowKafkaTraceMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
     ) => Promise<void>,
     traceOptions?: TraceOptions,
     serviceClient?: TraceFlowServiceClient
   ) {
-    this.jobId = jobId;
+    this.traceId = traceId;
     this.source = source;
     this.sendMessage = sendMessage;
     this.traceOptions = traceOptions || {};
@@ -58,7 +58,7 @@ export class JobManager {
     }
 
     try {
-      const lastStepNumber = await this.serviceClient.getLastStepNumber(this.jobId);
+      const lastStepNumber = await this.serviceClient.getLastStepNumber(this.traceId);
       this.currentStepNumber = lastStepNumber;
     } catch (error) {
       console.warn('Failed to initialize from service, using in-memory state:', error);
@@ -69,15 +69,7 @@ export class JobManager {
    * Get the trace ID
    */
   getId(): string {
-    return this.jobId;
-  }
-
-  /**
-   * Alias for getId() - for backward compatibility
-   * @deprecated Use getId() instead
-   */
-  getJobId(): string {
-    return this.getId();
+    return this.traceId;
   }
 
   /**
@@ -96,7 +88,7 @@ export class JobManager {
    */
   getStep(stepNumber: number): Step {
     const step = new Step(
-      this.jobId,
+      this.traceId,
       stepNumber,
       this.source,
       this.sendMessage,
@@ -109,11 +101,11 @@ export class JobManager {
   /**
    * Update the trace
    */
-  async update(options: UpdateJobOptions): Promise<void> {
+  async update(options: UpdateTraceOptions): Promise<void> {
     const now = new Date().toISOString();
 
-    const data: TraceFlowKafkaJobMessage = {
-      job_id: this.jobId,
+    const data: TraceFlowKafkaTraceMessage = {
+      trace_id: this.traceId,
       updated_at: now,
       ...options,
       // Convert Date to string if needed
@@ -124,26 +116,10 @@ export class JobManager {
   }
 
   /**
-   * Alias for update() - for backward compatibility
-   * @deprecated Use update() instead
-   */
-  async updateJob(options: UpdateJobOptions): Promise<void> {
-    return this.update(options);
-  }
-
-  /**
    * Start the trace (set status to RUNNING)
    */
   async start(): Promise<void> {
-    await this.update({ status: TraceFlowJobStatus.RUNNING });
-  }
-
-  /**
-   * Alias for start() - for backward compatibility
-   * @deprecated Use start() instead
-   */
-  async startJob(): Promise<void> {
-    return this.start();
+    await this.update({ status: TraceFlowTraceStatus.RUNNING });
   }
 
   /**
@@ -156,9 +132,9 @@ export class JobManager {
 
     const now = new Date().toISOString();
 
-    const data: TraceFlowKafkaJobMessage = {
-      job_id: this.jobId,
-      status: TraceFlowJobStatus.SUCCESS,
+    const data: TraceFlowKafkaTraceMessage = {
+      trace_id: this.traceId,
+      status: TraceFlowTraceStatus.SUCCESS,
       updated_at: now,
       finished_at: now,
       ...(result !== undefined && { result }),
@@ -176,22 +152,6 @@ export class JobManager {
   }
 
   /**
-   * Alias for complete() - for backward compatibility
-   * @deprecated Use complete() instead
-   */
-  async completeJob(result?: any): Promise<void> {
-    return this.complete(result);
-  }
-
-  /**
-   * Alias for finish() - for backward compatibility
-   * @deprecated Use finish() instead
-   */
-  async finishJob(result?: any): Promise<void> {
-    return this.finish(result);
-  }
-
-  /**
    * Fail the trace
    * Automatically closes all pending steps
    */
@@ -201,23 +161,15 @@ export class JobManager {
 
     const now = new Date().toISOString();
 
-    const data: TraceFlowKafkaJobMessage = {
-      job_id: this.jobId,
-      status: TraceFlowJobStatus.FAILED,
+    const data: TraceFlowKafkaTraceMessage = {
+      trace_id: this.traceId,
+      status: TraceFlowTraceStatus.FAILED,
       updated_at: now,
       finished_at: now,
       error,
     };
 
     await this.sendMessage('trace', data);
-  }
-
-  /**
-   * Alias for fail() - for backward compatibility
-   * @deprecated Use fail() instead
-   */
-  async failJob(error: string): Promise<void> {
-    return this.fail(error);
   }
 
   /**
@@ -230,22 +182,14 @@ export class JobManager {
 
     const now = new Date().toISOString();
 
-    const data: TraceFlowKafkaJobMessage = {
-      job_id: this.jobId,
-      status: TraceFlowJobStatus.CANCELLED,
+    const data: TraceFlowKafkaTraceMessage = {
+      trace_id: this.traceId,
+      status: TraceFlowTraceStatus.CANCELLED,
       updated_at: now,
       finished_at: now,
     };
 
     await this.sendMessage('trace', data);
-  }
-
-  /**
-   * Alias for cancel() - for backward compatibility
-   * @deprecated Use cancel() instead
-   */
-  async cancelJob(): Promise<void> {
-    return this.cancel();
   }
 
   /**
@@ -275,7 +219,7 @@ export class JobManager {
     }
 
     const data: TraceFlowKafkaStepMessage = {
-      job_id: this.jobId,
+      trace_id: this.traceId,
       step_number: stepNumber,
       step_id: options.step_id || uuidv4(),
       step_type: options.step_type,
@@ -290,7 +234,7 @@ export class JobManager {
     await this.sendMessage('step', data);
 
     // Create and store the Step instance
-    const step = new Step(this.jobId, stepNumber, this.source, this.sendMessage);
+    const step = new Step(this.traceId, stepNumber, this.source, this.sendMessage);
     this.currentStep = step;
     
     // Track this step in openSteps
@@ -321,29 +265,13 @@ export class JobManager {
   }
 
   /**
-   * Alias for step() - for backward compatibility
-   * @deprecated Use step() instead - returns Step instance now
-   */
-  async traceStep(options: CreateStepOptions = {}): Promise<Step> {
-    return this.step(options);
-  }
-
-  /**
-   * Alias for step() - for backward compatibility
-   * @deprecated Use step() instead - returns Step instance now
-   */
-  async createStep(options: CreateStepOptions = {}): Promise<Step> {
-    return this.step(options);
-  }
-
-  /**
    * Update an existing step
    */
   async updateStep(stepNumber: number, options: UpdateStepOptions = {}): Promise<void> {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaStepMessage = {
-      job_id: this.jobId,
+      trace_id: this.traceId,
       step_number: stepNumber,
       updated_at: now,
       ...options,
@@ -361,7 +289,7 @@ export class JobManager {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaStepMessage = {
-      job_id: this.jobId,
+      trace_id: this.traceId,
       step_number: stepNumber,
       status: TraceFlowStepStatus.COMPLETED,
       finished_at: now,
@@ -387,7 +315,7 @@ export class JobManager {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaStepMessage = {
-      job_id: this.jobId,
+      trace_id: this.traceId,
       step_number: stepNumber,
       status: TraceFlowStepStatus.FAILED,
       finished_at: now,
@@ -400,13 +328,13 @@ export class JobManager {
 
   /**
    * Create a log entry
-   * Can be associated with a specific step or just the job
+   * Can be associated with a specific step or just the trace
    */
   async log(options: CreateLogOptions): Promise<void> {
     const now = new Date().toISOString();
 
     const data: TraceFlowKafkaLogMessage = {
-      job_id: this.jobId,
+      trace_id: this.traceId,
       log_time: now,
       step_number: options.step_number,
       level: options.level,

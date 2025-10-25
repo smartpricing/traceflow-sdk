@@ -5,7 +5,7 @@
 
 export interface TraceState {
   trace_id: string;
-  job_type?: string;
+  trace_type?: string;
   status: string;
   source?: string;
   created_at: string;

@@ -34,7 +34,7 @@ export interface TraceCleanerConfig {
   inactivityTimeoutSeconds?: number;
 
   /**
-   * Cron interval in seconds - how often to run the cleanup job
+   * Cron interval in seconds - how often to run the cleanup traces
    * The cleaner will fetch traces that were last updated in this interval
    * Default: 300 seconds (5 minutes)
    */
@@ -67,7 +67,7 @@ export interface InactiveStep {
   updated_at: string;
 }
 
-export class TraceJobCleaner {
+export class TraceCleaner {
   private serviceClient: TraceFlowServiceClient;
   private kafkaProducer: KafkaJS.Producer;
   private topic: string;
@@ -101,11 +101,11 @@ export class TraceJobCleaner {
    */
   public start(): void {
     if (this.isRunning) {
-      this.logger('⚠️  TraceJobCleaner is already running');
+      this.logger('⚠️  TraceCleaner is already running');
       return;
     }
 
-    this.logger('🚀 Starting TraceJobCleaner', {
+    this.logger('🚀 Starting TraceCleaner', {
       inactivityTimeout: `${this.inactivityTimeoutSeconds} seconds (${Math.floor(this.inactivityTimeoutSeconds / 60)} minutes)`,
       cleanupInterval: `${this.cleanupIntervalSeconds} seconds (${Math.floor(this.cleanupIntervalSeconds / 60)} minutes)`,
       topic: this.topic,
@@ -132,7 +132,7 @@ export class TraceJobCleaner {
    */
   public stop(): void {
     if (!this.isRunning) {
-      this.logger('⚠️  TraceJobCleaner is not running');
+      this.logger('⚠️  TraceCleaner is not running');
       return;
     }
 
@@ -142,7 +142,7 @@ export class TraceJobCleaner {
     }
 
     this.isRunning = false;
-    this.logger('🛑 TraceJobCleaner stopped');
+    this.logger('🛑 TraceCleaner stopped');
   }
 
   /**

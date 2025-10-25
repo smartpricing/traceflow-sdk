@@ -55,7 +55,7 @@ export interface TraceFlowCleanerConfig {
   inactivityTimeoutSeconds?: number;
 
   /**
-   * Cron interval in seconds - how often to run the cleanup job
+   * Cron interval in seconds - how often to run the cleanup traces
    * Default: 300 seconds (5 minutes)
    */
   cleanupIntervalSeconds?: number;

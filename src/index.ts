@@ -7,7 +7,7 @@ export { TraceFlowClient } from './client';
 export { TraceManager } from './trace-manager';
 export { Step } from './step';
 export { TraceFlowServiceClient } from './service-client';
-export { TraceJobCleaner } from './trace-cleaner';
+export { TraceCleaner } from './trace-cleaner';
 export type { TraceState, StepState } from './service-client';
 export type { TraceCleanerConfig } from './trace-cleaner';
 

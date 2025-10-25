@@ -73,14 +73,6 @@ export class TraceManager {
   }
 
   /**
-   * Alias for getId() - for backward compatibility
-   * @deprecated Use getId() instead
-   */
-  getJobId(): string {
-    return this.getId();
-  }
-
-  /**
    * Get an existing step instance by step number
    * Useful for resuming work on a step from another process/instance
    * 
@@ -124,26 +116,10 @@ export class TraceManager {
   }
 
   /**
-   * Alias for update() - for backward compatibility
-   * @deprecated Use update() instead
-   */
-  async updateJob(options: UpdateTraceOptions): Promise<void> {
-    return this.update(options);
-  }
-
-  /**
    * Start the trace (set status to RUNNING)
    */
   async start(): Promise<void> {
     await this.update({ status: TraceFlowTraceStatus.RUNNING });
-  }
-
-  /**
-   * Alias for start() - for backward compatibility
-   * @deprecated Use start() instead
-   */
-  async startJob(): Promise<void> {
-    return this.start();
   }
 
   /**
@@ -176,22 +152,6 @@ export class TraceManager {
   }
 
   /**
-   * Alias for complete() - for backward compatibility
-   * @deprecated Use complete() instead
-   */
-  async completeJob(result?: any): Promise<void> {
-    return this.complete(result);
-  }
-
-  /**
-   * Alias for finish() - for backward compatibility
-   * @deprecated Use finish() instead
-   */
-  async finishJob(result?: any): Promise<void> {
-    return this.finish(result);
-  }
-
-  /**
    * Fail the trace
    * Automatically closes all pending steps
    */
@@ -213,14 +173,6 @@ export class TraceManager {
   }
 
   /**
-   * Alias for fail() - for backward compatibility
-   * @deprecated Use fail() instead
-   */
-  async failJob(error: string): Promise<void> {
-    return this.fail(error);
-  }
-
-  /**
    * Cancel the trace
    * Automatically closes all pending steps
    */
@@ -238,14 +190,6 @@ export class TraceManager {
     };
 
     await this.sendMessage('trace', data);
-  }
-
-  /**
-   * Alias for cancel() - for backward compatibility
-   * @deprecated Use cancel() instead
-   */
-  async cancelJob(): Promise<void> {
-    return this.cancel();
   }
 
   /**
@@ -318,22 +262,6 @@ export class TraceManager {
     
     // Clear the openSteps array
     this.openSteps = [];
-  }
-
-  /**
-   * Alias for step() - for backward compatibility
-   * @deprecated Use step() instead - returns Step instance now
-   */
-  async traceStep(options: CreateStepOptions = {}): Promise<Step> {
-    return this.step(options);
-  }
-
-  /**
-   * Alias for step() - for backward compatibility
-   * @deprecated Use step() instead - returns Step instance now
-   */
-  async createStep(options: CreateStepOptions = {}): Promise<Step> {
-    return this.step(options);
   }
 
   /**

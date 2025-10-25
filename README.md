@@ -614,9 +614,6 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 - `disconnect(): Promise<void>` - Disconnect from Kafka
 - `trace(options: CreateTraceOptions, traceOptions?: TraceOptions): Promise<TraceManager>` - Start a new trace
 - `getTrace(traceId: string, source?: string, traceOptions?: TraceOptions): TraceManager` - Get existing trace
-- `traceJob(options: CreateTraceOptions, traceOptions?: TraceOptions): Promise<TraceManager>` - Alias for trace() (deprecated)
-- `createJob(options: CreateTraceOptions, traceOptions?: TraceOptions): Promise<TraceManager>` - Alias for trace() (deprecated)
-- `getJobManager(traceId: string, source?: string, traceOptions?: TraceOptions): TraceManager` - Alias for getTrace() (deprecated)
 - `isConnected(): boolean` - Check if connected
 - `getTopic(): string` - Get configured topic
 - `getDefaultSource(): string | undefined` - Get default source
@@ -626,20 +623,13 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 #### Trace Methods
 
 - `getId(): string` - Get the trace ID
-- `getJobId(): string` - Alias for getId() (deprecated)
 - `getStep(stepNumber: number): Step` - Get existing step by number
 - `start(): Promise<void>` - Start trace (set status to RUNNING)
 - `update(options: UpdateTraceOptions): Promise<void>` - Update trace
-- `updateJob(options: UpdateTraceOptions): Promise<void>` - Alias for update() (deprecated)
 - `finish(result?: any): Promise<void>` - Finish trace successfully
 - `complete(result?: any): Promise<void>` - Complete trace (same as finish)
 - `fail(error: string): Promise<void>` - Fail trace
 - `cancel(): Promise<void>` - Cancel trace
-- `startJob(): Promise<void>` - Alias for start() (deprecated)
-- `finishJob(result?: any): Promise<void>` - Alias for finish() (deprecated)
-- `completeJob(result?: any): Promise<void>` - Alias for complete() (deprecated)
-- `failJob(error: string): Promise<void>` - Alias for fail() (deprecated)
-- `cancelJob(): Promise<void>` - Alias for cancel() (deprecated)
 
 #### Step Methods
 
@@ -648,8 +638,6 @@ new TraceFlowClient(config: TraceFlowConfig, defaultSource?: string)
 - `finishStep(stepNumber: number, output?: any): Promise<void>` - Finish step (legacy)
 - `completeStep(stepNumber: number, output?: any): Promise<void>` - Complete step (legacy)
 - `failStep(stepNumber: number, error: string): Promise<void>` - Fail step (legacy)
-- `traceStep(options?: CreateStepOptions): Promise<Step>` - Alias for step() (deprecated)
-- `createStep(options?: CreateStepOptions): Promise<Step>` - Alias for step() (deprecated)
 
 ### Step
 

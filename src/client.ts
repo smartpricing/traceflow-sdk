@@ -14,7 +14,7 @@ import {
 } from './types';
 import { TraceManager } from './trace-manager';
 import { TraceFlowServiceClient } from './service-client';
-import { TraceJobCleaner } from './trace-cleaner';
+import { TraceCleaner } from './trace-cleaner';
 
 /**
  * Type guard to check if config is KafkaConfig
@@ -36,7 +36,7 @@ export class TraceFlowClient {
   private defaultSource?: string;
   private ownsProducer: boolean = true; // Track if we created the producer or received it
   private serviceClient?: TraceFlowServiceClient; // Optional service client for state recovery
-  private cleaner?: TraceJobCleaner; // Optional cleaner for auto-cleanup
+  private cleaner?: TraceCleaner; // Optional cleaner for auto-cleanup
   private config: TraceFlowConfig; // Store config for cleaner initialization
 
   constructor(config: TraceFlowConfig, defaultSource?: string) {
@@ -136,7 +136,7 @@ export class TraceFlowClient {
     if ('cleanerConfig' in this.config && this.config.cleanerConfig && this.serviceClient) {
       const cleanerConfig = this.config.cleanerConfig;
       
-      this.cleaner = new TraceJobCleaner({
+      this.cleaner = new TraceCleaner({
         serviceClient: this.serviceClient,
         kafkaProducer: this.producer,
         topic: this.topic,
@@ -230,22 +230,6 @@ export class TraceFlowClient {
   }
 
   /**
-   * Alias for trace() - for backward compatibility
-   * @deprecated Use trace() instead
-   */
-  async traceJob(options: CreateTraceOptions = {}, traceOptions?: TraceOptions): Promise<TraceManager> {
-    return this.trace(options, traceOptions);
-  }
-
-  /**
-   * Alias for trace() - for backward compatibility
-   * @deprecated Use trace() instead
-   */
-  async createJob(options: CreateTraceOptions = {}, traceOptions?: TraceOptions): Promise<TraceManager> {
-    return this.trace(options, traceOptions);
-  }
-
-  /**
    * Get a TraceManager for an existing trace
    * Useful if you need to update a trace from a different process/instance
    * 
@@ -272,14 +256,6 @@ export class TraceFlowClient {
       traceOptions,
       this.serviceClient // Pass service client for state recovery
     );
-  }
-
-  /**
-   * Alias for getTrace() - for backward compatibility
-   * @deprecated Use getTrace() instead
-   */
-  getJobManager(traceId: string, source?: string, traceOptions?: TraceOptions): TraceManager {
-    return this.getTrace(traceId, source, traceOptions);
   }
 
   /**
@@ -333,7 +309,7 @@ export class TraceFlowClient {
    * Get the cleaner instance (if configured)
    * Useful for manual control of the cleaner
    */
-  getCleaner(): TraceJobCleaner | undefined {
+  getCleaner(): TraceCleaner | undefined {
     return this.cleaner;
   }
 

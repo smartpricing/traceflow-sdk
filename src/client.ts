@@ -67,13 +67,15 @@ export class TraceFlowClient {
     if (isKafkaConfig(config)) {
       // Create new Kafka instance from config
       const kafkaConfig: any = {
-        clientId: config.clientId || 'traceflow-sdk',
         brokers: config.brokers,
+        kafkaJS: {
+          clientId: config.clientId || 'traceflow-sdk',
+        },
       };
 
       if (config.sasl) {
-        kafkaConfig.sasl = config.sasl;
-        kafkaConfig.ssl = config.ssl !== undefined ? config.ssl : true;
+        kafkaConfig.kafkaJS.sasl = config.sasl;
+        kafkaConfig.kafkaJS.ssl = config.ssl !== undefined ? config.ssl : true;
       }
 
       this.kafka = new KafkaJS.Kafka(kafkaConfig);

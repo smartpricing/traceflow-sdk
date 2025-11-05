@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 1.0.10 (2025-11-05)
+
+
+### Bug Fixes
+
+* move brokers to kafkaJS block - all Kafka properties now in kafkaJS namespace ([ebf829b](https://github.com-sp/smartpricing/traceflow-sdk/commit/ebf829b0bca679d233d2f8bcc9846cca0b8d0833))
+
 ### 1.0.9 (2025-11-05)
 
 ### 1.0.8 (2025-11-05)

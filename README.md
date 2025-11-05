@@ -22,41 +22,54 @@ npm install traceflow-sdk
 yarn add traceflow-sdk
 ```
 
+## 📚 Examples
+
+Check out our [comprehensive examples](./examples/README.md) to learn how to use TraceFlow SDK in real-world scenarios:
+
+- **[Singleton Pattern](./examples/singleton-pattern/README.md)** - **Recommended** for most applications. Initialize once, use everywhere without dependency injection.
+
 ## 🚀 Quick Start
 
 ### Singleton Pattern (Recommended)
 
-The easiest way to use TraceFlow is with the singleton pattern:
+The easiest way to use TraceFlow is with the singleton pattern - initialize once and use everywhere:
 
 ```typescript
-import { initializeTraceFlow, getTraceFlow } from 'traceflow-sdk';
+import { TraceFlowClient } from 'traceflow-sdk';
 
-// Initialize once at application startup
-const client = initializeTraceFlow(
-  {
-    brokers: ['localhost:9092'],
-    topic: 'ota-traces',
-    clientId: 'my-app',
-  },
-  'my-service' // default source
-);
+// 1. Initialize once at application startup (e.g., in main.ts or app.ts)
+const client = new TraceFlowClient({
+  brokers: ['localhost:9092'],
+  redisUrl: 'redis://localhost:6379', // For state persistence
+  topic: 'traceflow', // Optional, defaults to 'traceflow'
+});
 
 await client.connect();
 
-// Now trace from anywhere in your application
+// 2. Then use anywhere in your application without passing the client around
 async function someOperation() {
-  const client = getTraceFlow();
+  // Get the singleton instance - no need to pass it as parameter!
+  const client = TraceFlowClient.getInstance();
   
-  const trace = await client.trace({
-    trace_type: 'sync',
-    title: 'Data Sync',
+  const trace = client.trace({
+    trace_type: 'user_registration',
+    title: 'Register User',
   });
   
-  await trace.start();
-  // ... your logic
-  await trace.finish();
+  const step = await trace.step({ name: 'Validate Input' });
+  await step.complete({ output: { valid: true } });
+  
+  await trace.complete({ result: { success: true } });
 }
+
+// 3. Gracefully shutdown when app exits
+process.on('SIGTERM', async () => {
+  await client.disconnect();
+  process.exit(0);
+});
 ```
+
+See the [complete singleton pattern example](./examples/singleton-pattern/README.md) for real-world usage with Express.js, NestJS, and Kubernetes.
 
 ### Standard Usage
 

@@ -19,6 +19,7 @@ export class Step {
   private stepNumber: number;
   private source?: string;
   private closed: boolean = false;
+  private currentStatus?: TraceFlowStepStatus;
   private redisClient?: TraceFlowRedisClient;
   private sendMessage: (
     type: 'trace' | 'step' | 'log',
@@ -85,12 +86,23 @@ export class Step {
   }
 
   /**
+   * Validate that operations can be performed on this step
+   * @throws {StepClosedError} if step is already closed
+   */
+  private validateNotClosed(): void {
+    if (this.closed) {
+      console.log(`[Step ${this.traceId}:${this.stepNumber}] ❌ Cannot perform operation - step is closed with status: ${this.currentStatus}`);
+      const { StepClosedError } = require('./errors');
+      throw new StepClosedError(this.traceId, this.stepNumber, this.currentStatus || 'unknown');
+    }
+  }
+
+  /**
    * Update the step
+   * @throws {StepClosedError} if step is already closed
    */
   async update(options: UpdateStepOptions = {}): Promise<void> {
-    if (this.closed) {
-      throw new Error(`Step ${this.stepNumber} is already closed`);
-    }
+    this.validateNotClosed();
 
     console.log(`[Step ${this.traceId}:${this.stepNumber}] Updating step (status: ${options.status || 'unchanged'})`);
 
@@ -107,6 +119,15 @@ export class Step {
     };
 
     await this.sendMessage('step', data);
+    
+    // Update current status if provided
+    if (options.status) {
+      this.currentStatus = options.status as TraceFlowStepStatus;
+      // Mark as closed if status is completed or failed
+      if (options.status === TraceFlowStepStatus.COMPLETED || options.status === TraceFlowStepStatus.FAILED) {
+        this.closed = true;
+      }
+    }
 
     // Persist to Redis if available
     if (this.redisClient) {
@@ -139,11 +160,10 @@ export class Step {
 
   /**
    * Complete the step successfully
+   * @throws {StepClosedError} if step is already closed
    */
   async complete(output?: any): Promise<void> {
-    if (this.closed) {
-      throw new Error(`Step ${this.stepNumber} is already closed`);
-    }
+    this.validateNotClosed();
 
     console.log(`[Step ${this.traceId}:${this.stepNumber}] Completing step...`);
 
@@ -161,6 +181,7 @@ export class Step {
 
     await this.sendMessage('step', data);
     this.closed = true;
+    this.currentStatus = TraceFlowStepStatus.COMPLETED;
 
     // Persist to Redis if available
     if (this.redisClient) {
@@ -193,11 +214,10 @@ export class Step {
 
   /**
    * Fail the step
+   * @throws {StepClosedError} if step is already closed
    */
   async fail(error: string): Promise<void> {
-    if (this.closed) {
-      throw new Error(`Step ${this.stepNumber} is already closed`);
-    }
+    this.validateNotClosed();
 
     console.log(`[Step ${this.traceId}:${this.stepNumber}] Failing step with error: ${error}`);
 
@@ -215,6 +235,7 @@ export class Step {
 
     await this.sendMessage('step', data);
     this.closed = true;
+    this.currentStatus = TraceFlowStepStatus.FAILED;
 
     // Persist to Redis if available
     if (this.redisClient) {

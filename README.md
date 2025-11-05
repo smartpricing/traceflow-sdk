@@ -13,6 +13,8 @@ TypeScript SDK for sending trace tracking messages to Kafka. Provides a simple i
 - ✅ **Rich Metadata** - Support for tags, custom metadata, params and results
 - ✅ **Redis State Persistence** - Optional Redis integration for state recovery on pod restarts
 - ✅ **Automatic Cleanup** - Built-in cleaner for inactive traces with configurable timeouts
+- ✅ **State Validation** - Prevents operations on closed traces/steps with custom error classes
+- ✅ **Duplicate Prevention** - Optional duplicate detection to prevent data overwrites
 
 ## 📦 Installation
 
@@ -22,11 +24,12 @@ npm install traceflow-sdk
 yarn add traceflow-sdk
 ```
 
-## 📚 Examples
+## 📚 Documentation
 
-Check out our [comprehensive examples](./examples/README.md) to learn how to use TraceFlow SDK in real-world scenarios:
-
-- **[Singleton Pattern](./examples/singleton-pattern/README.md)** - **Recommended** for most applications. Initialize once, use everywhere without dependency injection.
+- **[Examples](./examples/README.md)** - Comprehensive examples for real-world scenarios
+- **[Singleton Pattern](./examples/singleton-pattern/README.md)** - **Recommended** pattern for most applications
+- **[Error Handling & State Validation](./ERROR_HANDLING.md)** - Complete guide to error handling, duplicate prevention, and state validation
+- **[Service Integration](./SERVICE_INTEGRATION.md)** - Production deployment guide
 
 ## 🚀 Quick Start
 
@@ -165,6 +168,50 @@ await resumedTrace.initializeFromRedis(); // Recover step numbers from Redis
 
 await client.disconnect();
 ```
+
+### With Duplicate Prevention
+
+Enable duplicate prevention to protect against accidental overwrites:
+
+```typescript
+import { TraceFlowClient, DuplicateError } from 'traceflow-sdk';
+
+const client = new TraceFlowClient({
+  brokers: ['localhost:9092'],
+  redisUrl: 'redis://localhost:6379', // Redis required for duplicate detection
+  preventDuplicates: true, // Enable duplicate prevention
+});
+
+await client.connect();
+
+// First trace
+const trace1 = client.trace({
+  trace_id: 'order_12345',
+  title: 'Process Order',
+});
+await trace1.complete();
+
+// Attempt to create duplicate
+try {
+  const trace2 = client.trace({
+    trace_id: 'order_12345', // Same ID
+    title: 'Process Order Again',
+  });
+  // Throws DuplicateError because trace is already closed
+} catch (error) {
+  if (error instanceof DuplicateError) {
+    console.log('Trace already exists and is closed');
+    // Retrieve existing trace instead
+    const existing = client.getTrace('order_12345');
+  }
+}
+
+await client.disconnect();
+```
+
+**Note:** When `preventDuplicates: false` (default), new data overwrites existing data.
+
+See [Error Handling Guide](./ERROR_HANDLING.md) for complete details.
 
 ### With Auto-Close Steps
 

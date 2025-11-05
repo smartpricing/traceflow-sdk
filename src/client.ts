@@ -40,25 +40,27 @@ export class TraceFlowClient {
   private ownsRedisClient: boolean = false; // Track if we created the Redis client
   private cleaner?: TraceCleaner; // Optional cleaner for auto-cleanup
   private config: TraceFlowConfig; // Store config for cleaner initialization
+  private preventDuplicates: boolean = false; // Track if duplicate prevention is enabled
 
   constructor(config: TraceFlowConfig, defaultSource?: string) {
     this.config = config;
     this.topic = config.topic || 'traceflow'; // Default to 'traceflow'
     this.defaultSource = defaultSource;
+    this.preventDuplicates = config.preventDuplicates || false;
 
-    console.log(`[TraceFlow Client] Initializing TraceFlow SDK (topic: ${this.topic}, source: ${defaultSource || 'none'})`);
+    console.log(`[TraceFlow Client] Initializing TraceFlow SDK (topic: ${this.topic}, source: ${defaultSource || 'none'}, preventDuplicates: ${this.preventDuplicates})`);
 
     // Initialize Redis client if provided
     if (config.redisClient) {
       // Use existing Redis client
       console.log('[TraceFlow Client] Using existing Redis client');
-      this.redisClient = new TraceFlowRedisClient(config.redisClient);
+      this.redisClient = new TraceFlowRedisClient(config.redisClient, this.preventDuplicates);
       this.ownsRedisClient = false;
     } else if (config.redisUrl) {
       // Create new Redis client from URL
       console.log(`[TraceFlow Client] Creating new Redis client (url: ${config.redisUrl})`);
       const client = createClient({ url: config.redisUrl });
-      this.redisClient = new TraceFlowRedisClient(client as RedisClientType);
+      this.redisClient = new TraceFlowRedisClient(client as RedisClientType, this.preventDuplicates);
       this.ownsRedisClient = true;
     } else {
       console.log('[TraceFlow Client] ⚠️ No Redis configuration provided - state persistence disabled');

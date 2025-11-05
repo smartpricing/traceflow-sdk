@@ -1,5 +1,6 @@
 import { KafkaJS } from '@confluentinc/kafka-javascript';
 import { v4 as uuidv4 } from 'uuid';
+import { createClient, RedisClientType } from 'redis';
 
 import {
   TraceFlowKafkaConfig,
@@ -13,7 +14,7 @@ import {
   TraceFlowTraceStatus,
 } from './types';
 import { TraceManager } from './trace-manager';
-import { TraceFlowServiceClient } from './service-client';
+import { TraceFlowRedisClient } from './redis-client';
 import { TraceCleaner } from './trace-cleaner';
 
 /**
@@ -35,7 +36,8 @@ export class TraceFlowClient {
   private connected: boolean = false;
   private defaultSource?: string;
   private ownsProducer: boolean = true; // Track if we created the producer or received it
-  private serviceClient?: TraceFlowServiceClient; // Optional service client for state recovery
+  private redisClient?: TraceFlowRedisClient; // Optional Redis client for state persistence
+  private ownsRedisClient: boolean = false; // Track if we created the Redis client
   private cleaner?: TraceCleaner; // Optional cleaner for auto-cleanup
   private config: TraceFlowConfig; // Store config for cleaner initialization
 
@@ -44,9 +46,22 @@ export class TraceFlowClient {
     this.topic = config.topic || 'traceflow'; // Default to 'traceflow'
     this.defaultSource = defaultSource;
 
-    // Initialize service client if URL provided
-    if ('serviceUrl' in config && config.serviceUrl) {
-      this.serviceClient = new TraceFlowServiceClient(config.serviceUrl);
+    console.log(`[TraceFlow Client] Initializing TraceFlow SDK (topic: ${this.topic}, source: ${defaultSource || 'none'})`);
+
+    // Initialize Redis client if provided
+    if (config.redisClient) {
+      // Use existing Redis client
+      console.log('[TraceFlow Client] Using existing Redis client');
+      this.redisClient = new TraceFlowRedisClient(config.redisClient);
+      this.ownsRedisClient = false;
+    } else if (config.redisUrl) {
+      // Create new Redis client from URL
+      console.log(`[TraceFlow Client] Creating new Redis client (url: ${config.redisUrl})`);
+      const client = createClient({ url: config.redisUrl });
+      this.redisClient = new TraceFlowRedisClient(client as RedisClientType);
+      this.ownsRedisClient = true;
+    } else {
+      console.log('[TraceFlow Client] ⚠️ No Redis configuration provided - state persistence disabled');
     }
 
     if (isKafkaConfig(config)) {
@@ -118,26 +133,42 @@ export class TraceFlowClient {
   }
 
   /**
-   * Connect to Kafka
-   * If using an external producer, this is a no-op
+   * Connect to Kafka and Redis
+   * If using an external producer, Kafka connection is a no-op
    */
   async connect(): Promise<void> {
     if (this.connected) {
+      console.log('[TraceFlow Client] Already connected');
       return;
     }
 
+    console.log('[TraceFlow Client] Connecting to Kafka and Redis...');
+
     if (this.ownsProducer) {
+      console.log('[TraceFlow Client] Connecting to Kafka...');
       await this.producer.connect();
+      console.log('[TraceFlow Client] ✅ Kafka connected');
+    } else {
+      console.log('[TraceFlow Client] Using external Kafka producer (already connected)');
+    }
+
+    // Connect to Redis if we own the client
+    if (this.redisClient && this.ownsRedisClient) {
+      await this.redisClient.connect();
+    } else if (this.redisClient) {
+      console.log('[TraceFlow Client] Using external Redis client (already connected)');
     }
     
     this.connected = true;
+    console.log('[TraceFlow Client] ✅ TraceFlow SDK connected successfully');
 
-    // Initialize cleaner if config provided and serviceUrl is available
-    if ('cleanerConfig' in this.config && this.config.cleanerConfig && this.serviceClient) {
+    // Initialize cleaner if config provided and Redis is available
+    if ('cleanerConfig' in this.config && this.config.cleanerConfig && this.redisClient) {
+      console.log('[TraceFlow Client] Initializing TraceCleaner...');
       const cleanerConfig = this.config.cleanerConfig;
       
       this.cleaner = new TraceCleaner({
-        serviceClient: this.serviceClient,
+        redisClient: this.redisClient,
         kafkaProducer: this.producer,
         topic: this.topic,
         inactivityTimeoutSeconds: cleanerConfig.inactivityTimeoutSeconds,
@@ -145,28 +176,45 @@ export class TraceFlowClient {
         autoStart: cleanerConfig.autoStart !== false, // Default to true
         logger: cleanerConfig.logger,
       });
+      
+      console.log(`[TraceFlow Client] ✅ TraceCleaner initialized (timeout: ${cleanerConfig.inactivityTimeoutSeconds || 1800}s, interval: ${cleanerConfig.cleanupIntervalSeconds || 300}s)`);
+    } else if ('cleanerConfig' in this.config && this.config.cleanerConfig && !this.redisClient) {
+      console.warn('[TraceFlow Client] ⚠️ TraceCleaner config provided but Redis is not configured - cleaner disabled');
     }
   }
 
   /**
-   * Disconnect from Kafka
-   * If using an external producer, this is a no-op (external code should manage disconnection)
+   * Disconnect from Kafka and Redis
+   * If using external instances, this is a no-op for those (external code should manage disconnection)
    */
   async disconnect(): Promise<void> {
     if (!this.connected) {
+      console.log('[TraceFlow Client] Already disconnected');
       return;
     }
 
+    console.log('[TraceFlow Client] Disconnecting from Kafka and Redis...');
+
     // Stop cleaner if running
     if (this.cleaner) {
+      console.log('[TraceFlow Client] Stopping TraceCleaner...');
       this.cleaner.stop();
+      console.log('[TraceFlow Client] ✅ TraceCleaner stopped');
     }
 
     if (this.ownsProducer) {
+      console.log('[TraceFlow Client] Disconnecting from Kafka...');
       await this.producer.disconnect();
+      console.log('[TraceFlow Client] ✅ Kafka disconnected');
+    }
+
+    // Disconnect from Redis if we own the client
+    if (this.redisClient && this.ownsRedisClient) {
+      await this.redisClient.disconnect();
     }
     
     this.connected = false;
+    console.log('[TraceFlow Client] ✅ TraceFlow SDK disconnected successfully');
   }
 
   /**
@@ -208,6 +256,8 @@ export class TraceFlowClient {
 
     const source = options.source || this.defaultSource;
 
+    console.log(`[TraceFlow Client] Creating new trace: ${traceId} (type: ${options.trace_type || 'none'}, source: ${source || 'none'})`);
+
     const data: TraceFlowKafkaTraceMessage = {
       trace_id: traceId,
       trace_type: options.trace_type,
@@ -225,8 +275,34 @@ export class TraceFlowClient {
 
     await this.sendMessage('trace', data);
 
+    // Persist initial state to Redis if available
+    if (this.redisClient) {
+      try {
+        console.log(`[TraceFlow Client] Persisting initial trace state to Redis: ${traceId}`);
+        await this.redisClient.saveTrace({
+          trace_id: traceId,
+          trace_type: options.trace_type,
+          status: (options.status || TraceFlowTraceStatus.PENDING) as TraceFlowTraceStatus,
+          source,
+          created_at: now,
+          updated_at: now,
+          title: options.title,
+          description: options.description,
+          owner: options.owner,
+          tags: options.tags,
+          metadata: options.metadata,
+          params: options.params,
+          last_activity_at: now,
+        });
+      } catch (error) {
+        console.error('[TraceFlow Client] ❌ Failed to persist initial trace state to Redis:', error);
+      }
+    }
+
+    console.log(`[TraceFlow Client] ✅ Trace created successfully: ${traceId}`);
+    
     // Return a TraceManager for this trace
-    return new TraceManager(traceId, source, this.sendMessage.bind(this), traceOptions);
+    return new TraceManager(traceId, source, this.sendMessage.bind(this), traceOptions, this.redisClient);
   }
 
   /**
@@ -249,28 +325,29 @@ export class TraceFlowClient {
    * ```
    */
   getTrace(traceId: string, source?: string, traceOptions?: TraceOptions): TraceManager {
+    console.log(`[TraceFlow Client] Getting TraceManager for existing trace: ${traceId}`);
     return new TraceManager(
       traceId,
       source || this.defaultSource,
       this.sendMessage.bind(this),
       traceOptions,
-      this.serviceClient // Pass service client for state recovery
+      this.redisClient // Pass Redis client for state persistence
     );
   }
 
   /**
-   * Get the service client (if configured)
+   * Get the Redis client (if configured)
    * Useful for querying trace/step state
    */
-  getServiceClient(): TraceFlowServiceClient | undefined {
-    return this.serviceClient;
+  getRedisClient(): TraceFlowRedisClient | undefined {
+    return this.redisClient;
   }
 
   /**
-   * Check if service client is configured
+   * Check if Redis client is configured
    */
-  hasServiceClient(): boolean {
-    return !!this.serviceClient;
+  hasRedisClient(): boolean {
+    return !!this.redisClient;
   }
 
   /**

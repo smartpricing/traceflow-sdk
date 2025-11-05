@@ -1,5 +1,5 @@
 import { KafkaJS } from '@confluentinc/kafka-javascript';
-import { TraceFlowServiceClient } from './service-client';
+import { TraceFlowRedisClient } from './redis-client';
 import {
   TraceFlowKafkaTraceMessage,
   TraceFlowKafkaStepMessage,
@@ -12,10 +12,9 @@ import {
 
 export interface TraceCleanerConfig {
   /**
-   * TraceFlow service client or service URL (required)
-   * Used to fetch inactive traces and steps
+   * Redis client for fetching inactive traces and steps (required)
    */
-  serviceClient: TraceFlowServiceClient | string;
+  redisClient: TraceFlowRedisClient;
 
   /**
    * Kafka producer instance for sending close messages
@@ -68,7 +67,7 @@ export interface InactiveStep {
 }
 
 export class TraceCleaner {
-  private serviceClient: TraceFlowServiceClient;
+  private redisClient: TraceFlowRedisClient;
   private kafkaProducer: KafkaJS.Producer;
   private topic: string;
   private inactivityTimeoutSeconds: number;
@@ -78,13 +77,7 @@ export class TraceCleaner {
   private logger: (message: string, data?: any) => void;
 
   constructor(config: TraceCleanerConfig) {
-    // Initialize service client
-    if (typeof config.serviceClient === 'string') {
-      this.serviceClient = new TraceFlowServiceClient(config.serviceClient);
-    } else {
-      this.serviceClient = config.serviceClient;
-    }
-
+    this.redisClient = config.redisClient;
     this.kafkaProducer = config.kafkaProducer;
     this.topic = config.topic || 'traceflow';
     this.inactivityTimeoutSeconds = config.inactivityTimeoutSeconds || 1800; // 30 minutes
@@ -198,43 +191,40 @@ export class TraceCleaner {
   }
 
   /**
-   * Fetch inactive traces from the TraceFlow service
+   * Fetch inactive traces from Redis
    */
   private async fetchInactiveTraces(): Promise<InactiveTrace[]> {
     try {
-      const response = await fetch(
-        `${this.serviceClient['baseUrl']}/api/traces/inactive?seconds=${this.inactivityTimeoutSeconds}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch inactive traces: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data.traces || [];
+      const traces = await this.redisClient.getInactiveTraces(this.inactivityTimeoutSeconds);
+      
+      return traces.map(trace => ({
+        trace_id: trace.trace_id,
+        trace_name: trace.title || trace.trace_type || 'Unnamed trace',
+        updated_at: trace.updated_at,
+        metadata: trace.metadata,
+      }));
     } catch (error) {
-      this.logger('❌ Error fetching inactive traces:', error);
+      this.logger('❌ Error fetching inactive traces from Redis:', error);
       throw error;
     }
   }
 
   /**
-   * Fetch open steps for a trace from the TraceFlow service
+   * Fetch open steps for a trace from Redis
    */
   private async fetchOpenSteps(traceId: string): Promise<InactiveStep[]> {
     try {
-      const response = await fetch(
-        `${this.serviceClient['baseUrl']}/api/traces/${traceId}/steps/inactive?seconds=${this.inactivityTimeoutSeconds}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch open steps: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data.steps || [];
+      const steps = await this.redisClient.getInactiveSteps(traceId, this.inactivityTimeoutSeconds);
+      
+      return steps.map(step => ({
+        trace_id: step.trace_id,
+        step_number: step.step_number,
+        step_name: step.name || step.step_type || `Step ${step.step_number}`,
+        status: step.status,
+        updated_at: step.updated_at,
+      }));
     } catch (error) {
-      this.logger(`❌ Error fetching open steps for trace ${traceId}:`, error);
+      this.logger(`❌ Error fetching open steps from Redis for trace ${traceId}:`, error);
       return [];
     }
   }

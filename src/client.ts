@@ -67,8 +67,8 @@ export class TraceFlowClient {
     if (isKafkaConfig(config)) {
       // Create new Kafka instance from config
       const kafkaConfig: any = {
-        brokers: config.brokers,
         kafkaJS: {
+          brokers: config.brokers,
           clientId: config.clientId || 'traceflow-sdk',
         },
       };

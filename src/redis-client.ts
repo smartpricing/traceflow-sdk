@@ -49,9 +49,12 @@ export interface StepState {
 export class TraceFlowRedisClient {
   private client: RedisClientType;
   private connected: boolean = false;
+  private preventDuplicates: boolean = false;
 
-  constructor(client: RedisClientType) {
+  constructor(client: RedisClientType, preventDuplicates: boolean = false) {
     this.client = client;
+    this.preventDuplicates = preventDuplicates;
+    console.log(`[TraceFlow Redis] Duplicate prevention: ${preventDuplicates ? 'ENABLED' : 'DISABLED'}`);
   }
 
   /**
@@ -84,10 +87,26 @@ export class TraceFlowRedisClient {
 
   /**
    * Save trace state
+   * @throws {DuplicateError} If preventDuplicates is enabled and trace already exists with status PENDING or RUNNING
    */
   async saveTrace(state: TraceState): Promise<void> {
     const key = `trace:${state.trace_id}`;
     console.log(`[TraceFlow Redis] Saving trace state: ${state.trace_id} (status: ${state.status})`);
+    
+    // Check for duplicates if preventDuplicates is enabled
+    if (this.preventDuplicates) {
+      const existing = await this.getTrace(state.trace_id);
+      if (existing) {
+        // Allow updates to existing trace, but check if it's already closed
+        const closedStatuses = [TraceFlowTraceStatus.SUCCESS, TraceFlowTraceStatus.FAILED, TraceFlowTraceStatus.CANCELLED];
+        if (closedStatuses.includes(existing.status)) {
+          console.log(`[TraceFlow Redis] ⚠️ Duplicate prevention: Trace ${state.trace_id} already closed with status ${existing.status}`);
+          const { DuplicateError } = require('./errors');
+          throw new DuplicateError('trace', state.trace_id);
+        }
+        console.log(`[TraceFlow Redis] Updating existing trace: ${state.trace_id} (current status: ${existing.status} -> new status: ${state.status})`);
+      }
+    }
     
     const data: Record<string, string> = {
       trace_id: state.trace_id,
@@ -170,10 +189,26 @@ export class TraceFlowRedisClient {
 
   /**
    * Save step state
+   * @throws {DuplicateError} If preventDuplicates is enabled and step already exists with COMPLETED or FAILED status
    */
   async saveStep(state: StepState): Promise<void> {
     const key = `trace:${state.trace_id}:step:${state.step_number}`;
     console.log(`[TraceFlow Redis] Saving step state: ${state.trace_id}:${state.step_number} (status: ${state.status})`);
+    
+    // Check for duplicates if preventDuplicates is enabled
+    if (this.preventDuplicates) {
+      const existing = await this.getStep(state.trace_id, state.step_number);
+      if (existing) {
+        // Allow updates to existing step, but check if it's already closed
+        const closedStatuses = [TraceFlowStepStatus.COMPLETED, TraceFlowStepStatus.FAILED];
+        if (closedStatuses.includes(existing.status)) {
+          console.log(`[TraceFlow Redis] ⚠️ Duplicate prevention: Step ${state.trace_id}:${state.step_number} already closed with status ${existing.status}`);
+          const { DuplicateError } = require('./errors');
+          throw new DuplicateError('step', `${state.trace_id}:${state.step_number}`);
+        }
+        console.log(`[TraceFlow Redis] Updating existing step: ${state.trace_id}:${state.step_number} (current status: ${existing.status} -> new status: ${state.status})`);
+      }
+    }
     
     const data: Record<string, string> = {
       trace_id: state.trace_id,

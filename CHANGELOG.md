@@ -2,8 +2,63 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### 1.0.10 (2025-11-05)
+## 1.1.0 (2025-11-05)
 
+
+### Features
+
+* Add state validation, duplicate prevention, and custom error classes ([e94b6f5](https://github.com-sp/smartpricing/traceflow-sdk/commit/e94b6f5b1b877856c212a5fed742eed1b130093a))
+
+## 1.0.11 (2025-11-05)
+
+### 🎉 New Features
+
+#### State Validation & Error Handling
+- **Custom Error Classes:** Added comprehensive error handling with specific error types
+  - `TraceClosedError` - Thrown when attempting operations on closed traces
+  - `StepClosedError` - Thrown when attempting operations on closed steps
+  - `DuplicateError` - Thrown when duplicate prevention detects duplicates
+  - `ClientNotInitializedError` - Thrown when using uninitialized singleton
+  - `RedisNotConfiguredError` - Thrown when Redis is required but not configured
+  - `InvalidStateTransitionError` - Thrown for invalid state transitions
+
+- **State Validation:** Automatic validation prevents invalid operations
+  - Cannot add steps to completed/failed/cancelled traces
+  - Cannot update/complete/fail closed steps
+  - Real-time status tracking for traces and steps
+  - Protection against race conditions in distributed systems
+
+#### Duplicate Prevention
+- **`preventDuplicates` Option:** New configuration flag for duplicate detection
+  - When `false` (default): New data overwrites existing data
+  - When `true`: Throws `DuplicateError` for closed traces/steps
+  - Allows updates to active traces (PENDING/RUNNING)
+  - Allows updates to open steps (STARTED/IN_PROGRESS)
+  - Requires Redis for duplicate detection
+
+### 📚 Documentation
+- **[ERROR_HANDLING.md](./ERROR_HANDLING.md)** - Comprehensive error handling guide
+  - Complete error class reference
+  - Duplicate prevention examples
+  - State validation best practices
+  - Idempotent operation patterns
+
+- **Updated README.md**
+  - Added duplicate prevention examples
+  - Enhanced feature list
+  - Better organized documentation links
+
+### 🔧 Internal Improvements
+- Enhanced logging for duplicate detection
+- Better state tracking in TraceManager and Step classes
+- Improved TypeScript types for error handling
+
+### 🔒 Data Integrity
+- Prevents accidental data overwrites when enabled
+- Ensures traces cannot be modified after completion
+- Protects against concurrent modification issues
+
+### 1.0.10 (2025-11-05)
 
 ### Bug Fixes
 

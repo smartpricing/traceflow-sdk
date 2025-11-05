@@ -88,6 +88,7 @@ export interface TraceFlowKafkaConfig {
   redisUrl?: string; // Optional: Redis URL for state persistence (e.g. 'redis://localhost:6379')
   redisClient?: any; // Optional: Existing Redis client instance
   cleanerConfig?: TraceFlowCleanerConfig; // Optional: Auto-cleanup configuration
+  preventDuplicates?: boolean; // Optional: If true, prevents duplicate trace/step operations. If false, new data overwrites old. Default: false
 }
 
 /**
@@ -100,6 +101,7 @@ export interface TraceFlowKafkaInstanceConfig {
   redisUrl?: string; // Optional: Redis URL for state persistence (e.g. 'redis://localhost:6379')
   redisClient?: any; // Optional: Existing Redis client instance
   cleanerConfig?: TraceFlowCleanerConfig; // Optional: Auto-cleanup configuration
+  preventDuplicates?: boolean; // Optional: If true, prevents duplicate trace/step operations. If false, new data overwrites old. Default: false
 }
 
 /**

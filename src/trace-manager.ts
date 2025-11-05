@@ -26,6 +26,7 @@ export class TraceManager {
   private openSteps: Step[] = []; // Track all open steps
   private traceOptions: TraceOptions;
   private redisClient?: TraceFlowRedisClient; // Optional Redis client for state persistence
+  private currentStatus?: TraceFlowTraceStatus; // Track current status to prevent invalid operations
   private sendMessage: (
     type: 'trace' | 'step' | 'log',
     data: TraceFlowKafkaTraceMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage
@@ -46,6 +47,28 @@ export class TraceManager {
     this.sendMessage = sendMessage;
     this.traceOptions = traceOptions || {};
     this.redisClient = redisClient;
+    this.currentStatus = TraceFlowTraceStatus.PENDING;
+  }
+
+  /**
+   * Check if the trace is closed (completed, failed, or cancelled)
+   * @returns true if trace is closed
+   */
+  private isClosed(): boolean {
+    const closedStatuses = [TraceFlowTraceStatus.SUCCESS, TraceFlowTraceStatus.FAILED, TraceFlowTraceStatus.CANCELLED];
+    return this.currentStatus ? closedStatuses.includes(this.currentStatus) : false;
+  }
+
+  /**
+   * Validate that operations can be performed on this trace
+   * @throws {TraceClosedError} if trace is already closed
+   */
+  private validateNotClosed(): void {
+    if (this.isClosed()) {
+      console.log(`[TraceManager ${this.traceId}] ❌ Cannot perform operation - trace is closed with status: ${this.currentStatus}`);
+      const { TraceClosedError } = require('./errors');
+      throw new TraceClosedError(this.traceId, this.currentStatus!);
+    }
   }
 
   /**
@@ -103,8 +126,11 @@ export class TraceManager {
 
   /**
    * Update the trace
+   * @throws {TraceClosedError} if trace is already closed
    */
   async update(options: UpdateTraceOptions): Promise<void> {
+    this.validateNotClosed();
+    
     const now = new Date().toISOString();
 
     console.log(`[TraceManager ${this.traceId}] Updating trace (status: ${options.status || 'unchanged'})`);
@@ -119,6 +145,11 @@ export class TraceManager {
       finished_at: options.finished_at ? (options.finished_at instanceof Date ? options.finished_at.toISOString() : options.finished_at) : undefined,
     };
     await this.sendMessage('trace', data);
+    
+    // Update current status if provided
+    if (options.status) {
+      this.currentStatus = options.status as TraceFlowTraceStatus;
+    }
 
     // Persist to Redis if available
     if (this.redisClient) {
@@ -156,8 +187,10 @@ export class TraceManager {
 
   /**
    * Start the trace (set status to RUNNING)
+   * @throws {TraceClosedError} if trace is already closed
    */
   async start(): Promise<void> {
+    this.validateNotClosed();
     await this.update({ status: TraceFlowTraceStatus.RUNNING });
   }
 
@@ -239,8 +272,11 @@ export class TraceManager {
    * Trace a new step
    * If step_number is not provided, it will be auto-incremented
    * Returns a Step instance for managing the step
+   * @throws {TraceClosedError} if trace is already closed
    */
   async step(options: CreateStepOptions = {}): Promise<Step> {
+    this.validateNotClosed();
+    
     const now = new Date().toISOString();
 
     console.log(`[TraceManager ${this.traceId}] Creating new step (name: ${options.name || 'unnamed'}, type: ${options.step_type || 'none'})`);

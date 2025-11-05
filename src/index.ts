@@ -11,6 +11,17 @@ export { TraceCleaner } from './trace-cleaner';
 export type { TraceState, StepState } from './redis-client';
 export type { TraceCleanerConfig } from './trace-cleaner';
 
+// Export error classes
+export {
+  TraceFlowError,
+  TraceClosedError,
+  StepClosedError,
+  DuplicateError,
+  ClientNotInitializedError,
+  RedisNotConfiguredError,
+  InvalidStateTransitionError,
+} from './errors';
+
 // Re-export singleton methods for convenience
 import { TraceFlowClient } from './client';
 

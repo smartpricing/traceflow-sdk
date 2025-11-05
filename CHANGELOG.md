@@ -2,8 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-## 1.1.0 (2025-11-05)
+## 1.1.1 (2025-11-05)
 
+### 🔧 Improvements
+
+#### Redis Key Prefix
+- **Added `traceflow:` prefix to all Redis keys**
+  - Prevents collisions with other applications sharing the same Redis instance
+  - Keys now follow pattern: `traceflow:trace:<id>`, `traceflow:traces:activity`, etc.
+  - Updated documentation with complete key structure reference
+
+### 📚 Documentation
+- **[SERVICE_INTEGRATION.md](./SERVICE_INTEGRATION.md)** - Added Redis Key Structure section
+  - Key patterns and examples
+  - Commands for inspecting Redis data
+  - Best practices for Redis usage
+
+## 1.1.0 (2025-11-05)
 
 ### Features
 

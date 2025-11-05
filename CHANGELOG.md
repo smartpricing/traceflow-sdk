@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## 1.2.0 (2025-11-05)
+
+
+### Features
+
+* Add traceflow: prefix to all Redis keys ([425d93a](https://github.com-sp/smartpricing/traceflow-sdk/commit/425d93a17eb1e1d8abfa403f8233e6653122ab04))
+
 ## 1.1.1 (2025-11-05)
 
 ### 🔧 Improvements

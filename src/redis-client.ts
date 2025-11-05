@@ -50,10 +50,12 @@ export class TraceFlowRedisClient {
   private client: RedisClientType;
   private connected: boolean = false;
   private preventDuplicates: boolean = false;
+  private readonly keyPrefix: string = 'traceflow:';
 
   constructor(client: RedisClientType, preventDuplicates: boolean = false) {
     this.client = client;
     this.preventDuplicates = preventDuplicates;
+    console.log(`[TraceFlow Redis] Redis key prefix: ${this.keyPrefix}`);
     console.log(`[TraceFlow Redis] Duplicate prevention: ${preventDuplicates ? 'ENABLED' : 'DISABLED'}`);
   }
 
@@ -90,7 +92,7 @@ export class TraceFlowRedisClient {
    * @throws {DuplicateError} If preventDuplicates is enabled and trace already exists with status PENDING or RUNNING
    */
   async saveTrace(state: TraceState): Promise<void> {
-    const key = `trace:${state.trace_id}`;
+    const key = `${this.keyPrefix}trace:${state.trace_id}`;
     console.log(`[TraceFlow Redis] Saving trace state: ${state.trace_id} (status: ${state.status})`);
     
     // Check for duplicates if preventDuplicates is enabled
@@ -133,7 +135,7 @@ export class TraceFlowRedisClient {
     
     // Add to activity sorted set for cleanup queries
     const timestamp = new Date(state.last_activity_at).getTime();
-    await this.client.zAdd('traces:activity', {
+    await this.client.zAdd(`${this.keyPrefix}traces:activity`, {
       score: timestamp,
       value: state.trace_id,
     });
@@ -145,7 +147,7 @@ export class TraceFlowRedisClient {
    * Get trace state
    */
   async getTrace(traceId: string): Promise<TraceState | null> {
-    const key = `trace:${traceId}`;
+    const key = `${this.keyPrefix}trace:${traceId}`;
     console.log(`[TraceFlow Redis] Retrieving trace state: ${traceId}`);
     
     const data = await this.client.hGetAll(key);
@@ -182,9 +184,9 @@ export class TraceFlowRedisClient {
    * Delete trace state
    */
   async deleteTrace(traceId: string): Promise<void> {
-    const key = `trace:${traceId}`;
+    const key = `${this.keyPrefix}trace:${traceId}`;
     await this.client.del(key);
-    await this.client.zRem('traces:activity', traceId);
+    await this.client.zRem(`${this.keyPrefix}traces:activity`, traceId);
   }
 
   /**
@@ -192,7 +194,7 @@ export class TraceFlowRedisClient {
    * @throws {DuplicateError} If preventDuplicates is enabled and step already exists with COMPLETED or FAILED status
    */
   async saveStep(state: StepState): Promise<void> {
-    const key = `trace:${state.trace_id}:step:${state.step_number}`;
+    const key = `${this.keyPrefix}trace:${state.trace_id}:step:${state.step_number}`;
     console.log(`[TraceFlow Redis] Saving step state: ${state.trace_id}:${state.step_number} (status: ${state.status})`);
     
     // Check for duplicates if preventDuplicates is enabled
@@ -232,7 +234,7 @@ export class TraceFlowRedisClient {
     
     // Add to step activity sorted set for cleanup queries
     const timestamp = new Date(state.last_activity_at).getTime();
-    await this.client.zAdd(`trace:${state.trace_id}:steps:activity`, {
+    await this.client.zAdd(`${this.keyPrefix}trace:${state.trace_id}:steps:activity`, {
       score: timestamp,
       value: state.step_number.toString(),
     });
@@ -244,7 +246,7 @@ export class TraceFlowRedisClient {
    * Get step state
    */
   async getStep(traceId: string, stepNumber: number): Promise<StepState | null> {
-    const key = `trace:${traceId}:step:${stepNumber}`;
+    const key = `${this.keyPrefix}trace:${traceId}:step:${stepNumber}`;
     const data = await this.client.hGetAll(key);
     
     if (!data || Object.keys(data).length === 0) {
@@ -273,7 +275,7 @@ export class TraceFlowRedisClient {
    * Get all steps for a trace
    */
   async getSteps(traceId: string): Promise<StepState[]> {
-    const pattern = `trace:${traceId}:step:*`;
+    const pattern = `${this.keyPrefix}trace:${traceId}:step:*`;
     const keys = await this.client.keys(pattern);
     
     if (keys.length === 0) {
@@ -323,9 +325,9 @@ export class TraceFlowRedisClient {
    * Delete step state
    */
   async deleteStep(traceId: string, stepNumber: number): Promise<void> {
-    const key = `trace:${traceId}:step:${stepNumber}`;
+    const key = `${this.keyPrefix}trace:${traceId}:step:${stepNumber}`;
     await this.client.del(key);
-    await this.client.zRem(`trace:${traceId}:steps:activity`, stepNumber.toString());
+    await this.client.zRem(`${this.keyPrefix}trace:${traceId}:steps:activity`, stepNumber.toString());
   }
 
   /**
@@ -364,7 +366,7 @@ export class TraceFlowRedisClient {
     console.log(`[TraceFlow Redis] Querying inactive traces (timeout: ${timeoutSeconds}s, threshold: ${new Date(threshold).toISOString()})`);
     
     // Get trace IDs with activity before threshold
-    const traceIds = await this.client.zRangeByScore('traces:activity', 0, threshold);
+    const traceIds = await this.client.zRangeByScore(`${this.keyPrefix}traces:activity`, 0, threshold);
     
     console.log(`[TraceFlow Redis] Found ${traceIds.length} potentially inactive traces`);
     
@@ -392,7 +394,7 @@ export class TraceFlowRedisClient {
     
     // Get step numbers with activity before threshold
     const stepNumbers = await this.client.zRangeByScore(
-      `trace:${traceId}:steps:activity`,
+      `${this.keyPrefix}trace:${traceId}:steps:activity`,
       0,
       threshold
     );

@@ -58,6 +58,60 @@ With Redis integration:
 
 ---
 
+## 🔑 Redis Key Structure
+
+All Redis keys are prefixed with `traceflow:` to avoid collisions with other applications sharing the same Redis instance.
+
+### Key Patterns
+
+```
+traceflow:trace:<trace_id>              # Trace state (hash)
+traceflow:traces:activity               # Sorted set for trace activity timestamps
+traceflow:trace:<trace_id>:step:<n>     # Step state (hash)
+traceflow:trace:<trace_id>:steps:activity  # Sorted set for step activity timestamps
+```
+
+### Example Keys
+
+```bash
+# Trace data
+traceflow:trace:order_12345
+
+# Trace activity index
+traceflow:traces:activity
+
+# Step data
+traceflow:trace:order_12345:step:0
+traceflow:trace:order_12345:step:1
+
+# Step activity index
+traceflow:trace:order_12345:steps:activity
+```
+
+### Key Details
+
+- **Hash Keys**: Store complete trace/step state with all metadata
+- **Sorted Sets**: Index traces/steps by `last_activity_at` timestamp for efficient cleanup queries
+- **Prefix**: `traceflow:` ensures no conflicts with other Redis data
+
+### Inspecting Redis Data
+
+```bash
+# List all TraceFlow keys
+redis-cli KEYS "traceflow:*"
+
+# Get trace state
+redis-cli HGETALL "traceflow:trace:order_12345"
+
+# Get step state
+redis-cli HGETALL "traceflow:trace:order_12345:step:0"
+
+# Check inactive traces (activity before timestamp 1699564800000)
+redis-cli ZRANGEBYSCORE "traceflow:traces:activity" 0 1699564800000
+```
+
+---
+
 ## 🔧 SDK Configuration
 
 ### Option 1: With Redis URL

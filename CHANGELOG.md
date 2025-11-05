@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## 1.1.0 (2025-11-05)
+
+
+### Features
+
+* Add state validation, duplicate prevention, and custom error classes ([e94b6f5](https://github.com-sp/smartpricing/traceflow-sdk/commit/e94b6f5b1b877856c212a5fed742eed1b130093a))
+
 ## 1.0.11 (2025-11-05)
 
 ### 🎉 New Features

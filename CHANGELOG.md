@@ -2,7 +2,46 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### 1.2.1 (2025-11-13)
+### 1.2.2 (2025-11-13)
+
+
+### Bug Fixes
+
+* preserve all data when closing steps and traces ([302b4e9](https://github.com-sp/smartpricing/traceflow-sdk/commit/302b4e95033b6ad300bfd337965e4e3639f54657))
+
+## 1.2.1 (2025-11-13)
+
+### 🐛 Bug Fixes
+
+#### Data Preservation on Close Operations
+- **Fixed:** All close operations now preserve complete data when sending final Kafka messages
+  - Previously, closing steps/traces only sent minimal fields to Kafka
+  - Lost important data: `step_id`, `name`, `step_type`, `input`, `metadata`, `trace_type`, `title`, `description`, etc.
+  - Now retrieves existing state from Redis before closing
+  - All fields are preserved in both Kafka messages and Redis state
+
+#### Step Close Operations
+- **Affected Methods:**
+  - `Step.complete()` - Now retrieves and preserves all existing fields
+  - `Step.fail()` - Now retrieves and preserves all existing fields
+- **Auto-Close Steps:**
+  - When `autoCloseSteps: true`, previous step is closed with all data preserved
+  - Manual step completion also preserves all fields
+
+#### Trace Close Operations
+- **Affected Methods:**
+  - `TraceManager.complete()` - Now retrieves and preserves all existing trace fields
+  - `TraceManager.fail()` - Now retrieves and preserves all existing trace fields
+  - `TraceManager.cancel()` - Now retrieves and preserves all existing trace fields
+
+### 🔧 Technical Details
+- Modified all close methods to retrieve state from Redis before sending Kafka message
+- Added field preservation using spread operator to maintain all existing data
+- **Behavior:**
+  - If Redis is available: Retrieves full state and includes all fields in Kafka message
+  - If Redis is not available: Falls back to basic fields only (as before)
+- Enhanced logging for better debugging
+- No breaking changes to public API
 
 ## 1.2.0 (2025-11-05)
 

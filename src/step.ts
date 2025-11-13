@@ -169,6 +169,17 @@ export class Step {
 
     const now = new Date().toISOString();
 
+    // Get existing state from Redis to preserve all fields
+    let existingState = null;
+    if (this.redisClient) {
+      try {
+        existingState = await this.redisClient.getStep(this.traceId, this.stepNumber);
+      } catch (error) {
+        console.warn(`[Step ${this.traceId}:${this.stepNumber}] ⚠️ Could not retrieve existing state from Redis:`, error);
+      }
+    }
+
+    // Build complete message with all existing fields
     const data: TraceFlowKafkaStepMessage = {
       trace_id: this.traceId,
       step_number: this.stepNumber,
@@ -176,6 +187,16 @@ export class Step {
       finished_at: now,
       updated_at: now,
       last_activity_at: now,
+      // Preserve existing fields if available
+      ...(existingState && {
+        step_id: existingState.step_id,
+        step_type: existingState.step_type,
+        name: existingState.name,
+        started_at: existingState.started_at,
+        input: existingState.input,
+        metadata: existingState.metadata,
+      }),
+      // Override with new output if provided
       ...(output !== undefined && { output }),
     };
 
@@ -186,7 +207,6 @@ export class Step {
     // Persist to Redis if available
     if (this.redisClient) {
       try {
-        const existingState = await this.redisClient.getStep(this.traceId, this.stepNumber);
         if (existingState) {
           await this.redisClient.saveStep({
             ...existingState,
@@ -223,6 +243,17 @@ export class Step {
 
     const now = new Date().toISOString();
 
+    // Get existing state from Redis to preserve all fields
+    let existingState = null;
+    if (this.redisClient) {
+      try {
+        existingState = await this.redisClient.getStep(this.traceId, this.stepNumber);
+      } catch (err) {
+        console.warn(`[Step ${this.traceId}:${this.stepNumber}] ⚠️ Could not retrieve existing state from Redis:`, err);
+      }
+    }
+
+    // Build complete message with all existing fields
     const data: TraceFlowKafkaStepMessage = {
       trace_id: this.traceId,
       step_number: this.stepNumber,
@@ -231,6 +262,16 @@ export class Step {
       updated_at: now,
       last_activity_at: now,
       error,
+      // Preserve existing fields if available
+      ...(existingState && {
+        step_id: existingState.step_id,
+        step_type: existingState.step_type,
+        name: existingState.name,
+        started_at: existingState.started_at,
+        input: existingState.input,
+        output: existingState.output,
+        metadata: existingState.metadata,
+      }),
     };
 
     await this.sendMessage('step', data);
@@ -238,23 +279,22 @@ export class Step {
     this.currentStatus = TraceFlowStepStatus.FAILED;
 
     // Persist to Redis if available
-    if (this.redisClient) {
+    if (this.redisClient && existingState) {
       try {
-        const existingState = await this.redisClient.getStep(this.traceId, this.stepNumber);
-        if (existingState) {
-          await this.redisClient.saveStep({
-            ...existingState,
-            status: TraceFlowStepStatus.FAILED,
-            finished_at: now,
-            updated_at: now,
-            last_activity_at: now,
-            error,
-          });
-        }
-      } catch (error) {
-        console.warn('Failed to persist step state to Redis:', error);
+        await this.redisClient.saveStep({
+          ...existingState,
+          status: TraceFlowStepStatus.FAILED,
+          finished_at: now,
+          updated_at: now,
+          last_activity_at: now,
+          error,
+        });
+      } catch (err) {
+        console.error(`[Step ${this.traceId}:${this.stepNumber}] ❌ Failed to persist step state to Redis:`, err);
       }
     }
+
+    console.log(`[Step ${this.traceId}:${this.stepNumber}] ✅ Step failed successfully`);
   }
 
   /**

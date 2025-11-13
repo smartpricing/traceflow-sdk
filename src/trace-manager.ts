@@ -206,15 +206,57 @@ export class TraceManager {
 
     const now = new Date().toISOString();
 
+    // Get existing state from Redis to preserve all fields
+    let existingState = null;
+    if (this.redisClient) {
+      try {
+        existingState = await this.redisClient.getTrace(this.traceId);
+      } catch (error) {
+        console.warn(`[TraceManager ${this.traceId}] ⚠️ Could not retrieve existing state from Redis:`, error);
+      }
+    }
+
+    // Build complete message with all existing fields
     const data: TraceFlowKafkaTraceMessage = {
       trace_id: this.traceId,
       status: TraceFlowTraceStatus.SUCCESS,
       updated_at: now,
       finished_at: now,
+      // Preserve existing fields if available
+      ...(existingState && {
+        trace_type: existingState.trace_type,
+        source: existingState.source,
+        created_at: existingState.created_at,
+        started_at: existingState.started_at,
+        title: existingState.title,
+        description: existingState.description,
+        owner: existingState.owner,
+        tags: existingState.tags,
+        metadata: existingState.metadata,
+        params: existingState.params,
+      }),
+      // Override with new result if provided
       ...(result !== undefined && { result }),
     };
 
     await this.sendMessage('trace', data);
+    this.currentStatus = TraceFlowTraceStatus.SUCCESS;
+
+    // Persist to Redis if available
+    if (this.redisClient && existingState) {
+      try {
+        await this.redisClient.saveTrace({
+          ...existingState,
+          status: TraceFlowTraceStatus.SUCCESS,
+          updated_at: now,
+          finished_at: now,
+          last_activity_at: now,
+          ...(result !== undefined && { result }),
+        });
+      } catch (error) {
+        console.error(`[TraceManager ${this.traceId}] ❌ Failed to persist trace state to Redis:`, error);
+      }
+    }
     
     console.log(`[TraceManager ${this.traceId}] ✅ Trace completed successfully`);
   }
@@ -232,20 +274,66 @@ export class TraceManager {
    * Automatically closes all pending steps
    */
   async fail(error: string): Promise<void> {
+    console.log(`[TraceManager ${this.traceId}] Failing trace with error: ${error}`);
+
     // Close all pending steps first
     await this.closeAllPendingSteps();
 
     const now = new Date().toISOString();
 
+    // Get existing state from Redis to preserve all fields
+    let existingState = null;
+    if (this.redisClient) {
+      try {
+        existingState = await this.redisClient.getTrace(this.traceId);
+      } catch (err) {
+        console.warn(`[TraceManager ${this.traceId}] ⚠️ Could not retrieve existing state from Redis:`, err);
+      }
+    }
+
+    // Build complete message with all existing fields
     const data: TraceFlowKafkaTraceMessage = {
       trace_id: this.traceId,
       status: TraceFlowTraceStatus.FAILED,
       updated_at: now,
       finished_at: now,
       error,
+      // Preserve existing fields if available
+      ...(existingState && {
+        trace_type: existingState.trace_type,
+        source: existingState.source,
+        created_at: existingState.created_at,
+        started_at: existingState.started_at,
+        title: existingState.title,
+        description: existingState.description,
+        owner: existingState.owner,
+        tags: existingState.tags,
+        metadata: existingState.metadata,
+        params: existingState.params,
+        result: existingState.result,
+      }),
     };
 
     await this.sendMessage('trace', data);
+    this.currentStatus = TraceFlowTraceStatus.FAILED;
+
+    // Persist to Redis if available
+    if (this.redisClient && existingState) {
+      try {
+        await this.redisClient.saveTrace({
+          ...existingState,
+          status: TraceFlowTraceStatus.FAILED,
+          updated_at: now,
+          finished_at: now,
+          last_activity_at: now,
+          error,
+        });
+      } catch (err) {
+        console.error(`[TraceManager ${this.traceId}] ❌ Failed to persist trace state to Redis:`, err);
+      }
+    }
+
+    console.log(`[TraceManager ${this.traceId}] ✅ Trace failed successfully`);
   }
 
   /**
@@ -253,19 +341,65 @@ export class TraceManager {
    * Automatically closes all pending steps
    */
   async cancel(): Promise<void> {
+    console.log(`[TraceManager ${this.traceId}] Cancelling trace...`);
+
     // Close all pending steps first
     await this.closeAllPendingSteps();
 
     const now = new Date().toISOString();
 
+    // Get existing state from Redis to preserve all fields
+    let existingState = null;
+    if (this.redisClient) {
+      try {
+        existingState = await this.redisClient.getTrace(this.traceId);
+      } catch (error) {
+        console.warn(`[TraceManager ${this.traceId}] ⚠️ Could not retrieve existing state from Redis:`, error);
+      }
+    }
+
+    // Build complete message with all existing fields
     const data: TraceFlowKafkaTraceMessage = {
       trace_id: this.traceId,
       status: TraceFlowTraceStatus.CANCELLED,
       updated_at: now,
       finished_at: now,
+      // Preserve existing fields if available
+      ...(existingState && {
+        trace_type: existingState.trace_type,
+        source: existingState.source,
+        created_at: existingState.created_at,
+        started_at: existingState.started_at,
+        title: existingState.title,
+        description: existingState.description,
+        owner: existingState.owner,
+        tags: existingState.tags,
+        metadata: existingState.metadata,
+        params: existingState.params,
+        result: existingState.result,
+        error: existingState.error,
+      }),
     };
 
     await this.sendMessage('trace', data);
+    this.currentStatus = TraceFlowTraceStatus.CANCELLED;
+
+    // Persist to Redis if available
+    if (this.redisClient && existingState) {
+      try {
+        await this.redisClient.saveTrace({
+          ...existingState,
+          status: TraceFlowTraceStatus.CANCELLED,
+          updated_at: now,
+          finished_at: now,
+          last_activity_at: now,
+        });
+      } catch (error) {
+        console.error(`[TraceManager ${this.traceId}] ❌ Failed to persist trace state to Redis:`, error);
+      }
+    }
+
+    console.log(`[TraceManager ${this.traceId}] ✅ Trace cancelled successfully`);
   }
 
   /**

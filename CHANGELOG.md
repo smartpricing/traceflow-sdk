@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 1.2.2 (2025-11-13)
+
+
+### Bug Fixes
+
+* preserve all data when closing steps and traces ([302b4e9](https://github.com-sp/smartpricing/traceflow-sdk/commit/302b4e95033b6ad300bfd337965e4e3639f54657))
+
 ## 1.2.1 (2025-11-13)
 
 ### 🐛 Bug Fixes

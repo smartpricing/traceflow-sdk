@@ -1,261 +1,278 @@
 /**
- * TraceFlow SDK Types
- * Types for sending trace tracking messages to Kafka
+ * TraceFlow SDK v2 - Core Types
+ * Stateless, event-based architecture
  */
 
+// ============================================================================
+// EVENT MODEL (Append-Only)
+// ============================================================================
+
 /**
- * Trace status enum
+ * Core event types emitted by the SDK
  */
-export enum TraceFlowTraceStatus {
-  PENDING = 'pending',
-  RUNNING = 'running',
-  SUCCESS = 'success',
-  FAILED = 'failed',
-  CANCELLED = 'cancelled',
+export enum TraceEventType {
+  TRACE_STARTED = 'trace_started',
+  TRACE_FINISHED = 'trace_finished',
+  TRACE_FAILED = 'trace_failed',
+  TRACE_CANCELLED = 'trace_cancelled',
+  STEP_STARTED = 'step_started',
+  STEP_FINISHED = 'step_finished',
+  STEP_FAILED = 'step_failed',
+  LOG_EMITTED = 'log_emitted',
 }
 
 /**
- * Step status enum
+ * Base event structure
  */
-export enum TraceFlowStepStatus {
-  STARTED = 'started',
-  IN_PROGRESS = 'in_progress',
-  COMPLETED = 'completed',
-  FAILED = 'failed',
+export interface TraceEvent {
+  event_id: string;
+  event_type: TraceEventType;
+  trace_id: string;
+  parent_trace_id?: string;
+  step_id?: string;
+  timestamp: string;
+  source: string;
+  payload: Record<string, any>;
 }
 
-/**
- * Log level enum
- */
-export enum TraceFlowLogLevel {
+// ============================================================================
+// STATUS ENUMS
+// ============================================================================
+
+export enum TraceStatus {
+  PENDING = 'PENDING',
+  RUNNING = 'RUNNING',
+  SUCCESS = 'SUCCESS',
+  FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum StepStatus {
+  STARTED = 'STARTED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+}
+
+export enum LogLevel {
   DEBUG = 'DEBUG',
   INFO = 'INFO',
   WARN = 'WARN',
   ERROR = 'ERROR',
+  FATAL = 'FATAL',
 }
 
-/**
- * Event type enum
- */
-export enum TraceFlowEventType {
-  STATE_CHANGE = 'state_change',
-  OUTPUT = 'output',
-  MESSAGE = 'message',
-  PROGRESS = 'progress',
-}
+// ============================================================================
+// SDK CONFIGURATION
+// ============================================================================
 
-/**
- * Trace cleaner configuration
- */
-export interface TraceFlowCleanerConfig {
-  /**
-   * Inactivity timeout in seconds - traces inactive longer than this will be closed
-   * Default: 1800 seconds (30 minutes)
-   */
-  inactivityTimeoutSeconds?: number;
-
-  /**
-   * Cron interval in seconds - how often to run the cleanup traces
-   * Default: 300 seconds (5 minutes)
-   */
-  cleanupIntervalSeconds?: number;
-
-  /**
-   * Whether to automatically start the cleaner when client connects
-   * Default: true
-   */
-  autoStart?: boolean;
-
-  /**
-   * Custom logger function (optional)
-   */
-  logger?: (message: string, data?: any) => void;
-}
-
-/**
- * Kafka configuration
- */
-export interface TraceFlowKafkaConfig {
+export interface KafkaConfig {
   brokers: string[];
-  topic?: string; // Optional - defaults to 'traceflow'
   clientId?: string;
   sasl?: {
     mechanism: 'plain' | 'scram-sha-256' | 'scram-sha-512';
     username: string;
     password: string;
   };
-  ssl?: boolean;
-  redisUrl?: string; // Optional: Redis URL for state persistence (e.g. 'redis://localhost:6379')
-  redisClient?: any; // Optional: Existing Redis client instance
-  cleanerConfig?: TraceFlowCleanerConfig; // Optional: Auto-cleanup configuration
-  preventDuplicates?: boolean; // Optional: If true, prevents duplicate trace/step operations. If false, new data overwrites old. Default: false
+  ssl?: boolean | {
+    rejectUnauthorized?: boolean;
+    ca?: string[];
+    cert?: string;
+    key?: string;
+  };
+  topic?: string;
 }
 
-/**
- * Kafka instance configuration - use existing Kafka or Producer instance
- */
-export interface TraceFlowKafkaInstanceConfig {
-  topic?: string; // Optional - defaults to 'traceflow'
-  kafka?: any; // Kafka instance from @confluentinc/kafka-javascript
-  producer?: any; // Producer instance from @confluentinc/kafka-javascript
-  redisUrl?: string; // Optional: Redis URL for state persistence (e.g. 'redis://localhost:6379')
-  redisClient?: any; // Optional: Existing Redis client instance
-  cleanerConfig?: TraceFlowCleanerConfig; // Optional: Auto-cleanup configuration
-  preventDuplicates?: boolean; // Optional: If true, prevents duplicate trace/step operations. If false, new data overwrites old. Default: false
+export interface TraceFlowSDKConfig {
+  transport: 'http' | 'kafka';
+  source: string;
+  
+  // HTTP transport options
+  endpoint?: string;
+  apiKey?: string;
+  username?: string;
+  password?: string;
+  timeout?: number;
+  
+  // Kafka transport options
+  kafka?: KafkaConfig;
+  
+  // Retry & reliability options
+  maxRetries?: number;
+  retryDelay?: number;
+  enableCircuitBreaker?: boolean;
+  
+  // Behavior options
+  autoFlushOnExit?: boolean;
+  flushTimeoutMs?: number;
+  silentErrors?: boolean; // Never throw, always swallow errors
 }
 
-/**
- * Combined configuration type - either config or instance
- */
-export type TraceFlowConfig = TraceFlowKafkaConfig | TraceFlowKafkaInstanceConfig;
+// ============================================================================
+// TRACE OPTIONS
+// ============================================================================
 
-/**
- * Trace creation options
- */
-export interface CreateTraceOptions {
+export interface StartTraceOptions {
+  trace_id?: string;
   trace_type?: string;
-  status?: TraceFlowTraceStatus | string;
-  source?: string;
   title?: string;
   description?: string;
   owner?: string;
   tags?: string[];
-  metadata?: Record<string, string>;
+  metadata?: Record<string, any>;
   params?: any;
+  parent_trace_id?: string;
+  idempotency_key?: string;
 }
 
-/**
- * Trace options for managing trace behavior
- */
-export interface TraceOptions {
-  /**
-   * Automatically close (complete) the previous step when a new step is created
-   * Default: false
-   */
-  autoCloseSteps?: boolean;
-}
-
-/**
- * Trace update options
- */
-export interface UpdateTraceOptions {
-  trace_type?: string;
-  status?: TraceFlowTraceStatus | string;
-  source?: string;
-  title?: string;
-  description?: string;
-  owner?: string;
-  tags?: string[];
-  metadata?: Record<string, string>;
-  params?: any;
+export interface FinishTraceOptions {
   result?: any;
-  error?: string;
-  started_at?: Date | string;
-  finished_at?: Date | string;
+  metadata?: Record<string, any>;
 }
 
-/**
- * Step creation options
- */
-export interface CreateStepOptions {
-  step_number?: number; // If not provided, will be auto-incremented
+// ============================================================================
+// STEP OPTIONS
+// ============================================================================
+
+export interface StartStepOptions {
   step_id?: string;
-  step_type?: string;
   name?: string;
-  status?: TraceFlowStepStatus | string;
+  step_type?: string;
   input?: any;
-  metadata?: Record<string, string>;
+  metadata?: Record<string, any>;
 }
 
-/**
- * Step update options
- */
-export interface UpdateStepOptions {
-  step_id?: string;
-  step_type?: string;
-  name?: string;
-  status?: TraceFlowStepStatus | string;
+export interface FinishStepOptions {
   output?: any;
-  error?: string;
-  finished_at?: Date | string;
-  metadata?: Record<string, string>;
+  metadata?: Record<string, any>;
 }
 
-/**
- * Log creation options
- */
-export interface CreateLogOptions {
-  step_number?: number;
-  level?: TraceFlowLogLevel | string;
-  event_type?: TraceFlowEventType | string;
-  message?: string;
-  details?: any;
-  source?: string;
-}
+// ============================================================================
+// LOG OPTIONS
+// ============================================================================
 
-/**
- * Internal Kafka message payload for traces
- */
-export interface TraceFlowKafkaTraceMessage {
-  trace_id: string;
-  trace_type?: string;
-  status?: string;
-  source?: string;
-  created_at?: string;
-  updated_at?: string;
-  started_at?: string;
-  finished_at?: string;
-  last_activity_at?: string;
-  title?: string;
-  description?: string;
-  owner?: string;
-  tags?: string[];
-  metadata?: Record<string, string>;
-  params?: any;
-  result?: any;
-  error?: string;
-}
-
-/**
- * Internal Kafka message payload for steps
- */
-export interface TraceFlowKafkaStepMessage {
-  trace_id: string;
-  step_number: number;
+export interface LogOptions {
   step_id?: string;
-  step_type?: string;
-  name?: string;
-  status?: string;
-  started_at?: string;
-  finished_at?: string;
-  updated_at?: string;
-  last_activity_at?: string;
-  input?: any;
-  output?: any;
-  error?: string;
-  metadata?: Record<string, string>;
-}
-
-/**
- * Internal Kafka message payload for logs
- */
-export interface TraceFlowKafkaLogMessage {
-  trace_id: string;
-  log_time?: string;
-  log_id?: string;
-  step_number?: number;
-  level?: string;
+  level?: LogLevel | string;
   event_type?: string;
-  message?: string;
   details?: any;
-  source?: string;
+}
+
+// ============================================================================
+// TRANSPORT INTERFACE
+// ============================================================================
+
+/**
+ * Transport abstraction for sending events
+ */
+export interface TraceTransport {
+  /**
+   * Send a single event
+   */
+  send(event: TraceEvent): Promise<void>;
+  
+  /**
+   * Flush any pending events
+   */
+  flush?(): Promise<void>;
+  
+  /**
+   * Shutdown the transport gracefully
+   */
+  shutdown?(): Promise<void>;
+}
+
+// ============================================================================
+// CONTEXT
+// ============================================================================
+
+/**
+ * Trace context stored in AsyncLocalStorage
+ */
+export interface TraceContext {
+  trace_id: string;
+  step_id?: string;
+  parent_trace_id?: string;
+  metadata?: Record<string, any>;
+}
+
+// ============================================================================
+// HANDLES
+// ============================================================================
+
+/**
+ * Handle for managing a trace lifecycle
+ */
+export interface TraceHandle {
+  trace_id: string;
+  finish(options?: FinishTraceOptions): Promise<void>;
+  fail(error: string | Error): Promise<void>;
+  cancel(): Promise<void>;
+  startStep(options?: StartStepOptions): Promise<StepHandle>;
+  log(message: string, options?: LogOptions): Promise<void>;
 }
 
 /**
- * Combined Kafka message
+ * Handle for managing a step lifecycle
  */
-export interface TraceFlowKafkaMessage {
-  type: 'trace' | 'step' | 'log';
-  data: TraceFlowKafkaTraceMessage | TraceFlowKafkaStepMessage | TraceFlowKafkaLogMessage;
+export interface StepHandle {
+  step_id: string;
+  trace_id: string;
+  finish(options?: FinishStepOptions): Promise<void>;
+  fail(error: string | Error): Promise<void>;
+  log(message: string, options?: LogOptions): Promise<void>;
+}
+
+// ============================================================================
+// HTTP API TYPES (matching service schema)
+// ============================================================================
+
+export interface HTTPTracePayload {
+  trace_id: string;
+  trace_type?: string;
+  status: TraceStatus;
+  source: string;
+  created_at: string;
+  updated_at: string;
+  started_at?: string;
+  finished_at?: string;
+  title?: string;
+  description?: string;
+  owner?: string;
+  tags?: string[];
+  metadata?: Record<string, any>;
+  params?: any;
+  result?: any;
+  error?: string;
+  last_activity_at?: string;
+  idempotency_key?: string;
+}
+
+export interface HTTPStepPayload {
+  trace_id: string;
+  step_number?: number;
+  step_id: string;
+  step_type?: string;
+  name?: string;
+  status: StepStatus;
+  started_at: string;
+  finished_at?: string;
+  updated_at: string;
+  input?: any;
+  output?: any;
+  error?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface HTTPLogPayload {
+  trace_id: string;
+  log_time: string;
+  log_id: string;
+  step_number?: number;
+  level: string;
+  event_type?: string;
+  message: string;
+  details?: any;
+  source: string;
 }
 

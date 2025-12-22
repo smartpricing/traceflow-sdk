@@ -2,6 +2,101 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2.2.0 (2025-12-21) - Custom Timeouts & Simplified Tracing
+
+### ✨ New Features
+
+#### Custom Trace & Step Timeouts
+- **`trace_timeout_ms`** - Set custom timeout for entire trace
+  - Overrides service default timeout
+  - Specified in milliseconds
+  - Service auto-closes trace after timeout
+- **`step_timeout_ms`** - Set custom timeout for each step in trace
+  - Overrides service default step timeout
+  - Specified in milliseconds
+  - Service marks steps as timed out
+
+### 🔥 Breaking Changes
+
+#### Removed Nested Traces Support
+- **Removed `parent_trace_id`** - No longer supported
+  - Nested/hierarchical traces are not supported
+  - Use `getTrace(traceId)` to continue existing traces across services
+  - Single flat trace model simplifies architecture
+- **Updated cross-service pattern**:
+  ```typescript
+  // Before (v2.1.0 - NOT SUPPORTED)
+  const childTrace = await sdk.startTrace({
+    parent_trace_id: parentTraceId
+  });
+
+  // After (v2.2.0)
+  const trace = await sdk.getTrace(traceId); // Retrieve existing trace
+  await trace.startStep({ name: 'Continue Process' });
+  ```
+
+### 🎯 Use Cases
+```typescript
+// Quick API call (5 seconds)
+await sdk.startTrace({
+  title: 'Quick API Call',
+  trace_timeout_ms: 5000,
+  step_timeout_ms: 2000,
+});
+
+// Long batch job (10 minutes)
+await sdk.startTrace({
+  title: 'Data Export',
+  trace_timeout_ms: 600000,
+  step_timeout_ms: 120000,
+});
+
+// Cross-service tracing (no parent_trace_id)
+const trace = await sdk.getTrace(traceId);
+await trace.startStep({ name: 'Service B Step' });
+```
+
+### 📚 Documentation
+- **New Example**: `examples/custom-timeouts.ts`
+  - Quick tasks (5s timeout)
+  - Long-running processes (10m timeout)
+  - Real-time processing (1s timeout)
+  - ML training (2h timeout)
+  - Default timeout behavior
+- **Updated README**: 
+  - Timeout documentation in `startTrace()` section
+  - Cross-service tracing patterns (no nested traces)
+  - Removed distributed tracing references
+- **PHP/Laravel SDK**: Updated with same changes
+
+### 🔧 Implementation
+- Added `trace_timeout_ms` and `step_timeout_ms` to `StartTraceOptions`
+- Updated `HTTPTracePayload` to include timeout fields
+- HTTP transport sends timeout values in trace creation
+- Removed `parent_trace_id` from `TraceEvent`, `StartTraceOptions`, `TraceContext`
+- PHP/Laravel SDK updated with same changes
+
+### 💡 Timeout Guidelines
+- **Quick API Calls**: 5-30 seconds
+- **Background Jobs**: 1-5 minutes
+- **Batch Processing**: 10-60 minutes
+- **Long-Running Tasks**: 1-24 hours
+- **Default (unspecified)**: Service-level configuration
+
+### 📦 Migration from v2.1.0
+
+If you were using `parent_trace_id`:
+
+```typescript
+// Before (v2.1.0)
+const childTrace = await sdk.startTrace({
+  parent_trace_id: parentTraceId
+});
+
+// After (v2.2.0)
+const trace = await sdk.getTrace(parentTraceId);
+```
+
 ## 2.1.0 (2025-12-18) - Trace Retrieval & Hybrid Patterns
 
 ### ✨ New Features

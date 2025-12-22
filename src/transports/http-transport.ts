@@ -166,6 +166,8 @@ export class HTTPTransport implements TraceTransport {
       params: event.payload.params,
       last_activity_at: event.timestamp,
       idempotency_key: event.payload.idempotency_key || event.event_id,
+      trace_timeout_ms: event.payload.trace_timeout_ms,
+      step_timeout_ms: event.payload.step_timeout_ms,
     };
 
     await this.executeRequestWithRetry(

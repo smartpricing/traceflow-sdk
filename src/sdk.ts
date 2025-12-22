@@ -131,7 +131,6 @@ export class TraceFlowSDK {
       event_id: uuidv4(),
       event_type: TraceEventType.TRACE_STARTED,
       trace_id,
-      parent_trace_id: options?.parent_trace_id,
       timestamp: new Date().toISOString(),
       source: this.config.source,
       payload: {
@@ -143,6 +142,8 @@ export class TraceFlowSDK {
         metadata: options?.metadata,
         params: options?.params,
         idempotency_key: options?.idempotency_key,
+        trace_timeout_ms: options?.trace_timeout_ms,
+        step_timeout_ms: options?.step_timeout_ms,
       },
     };
 
@@ -168,7 +169,6 @@ export class TraceFlowSDK {
       const result = await this.contextManager.runWithContext(
         {
           trace_id: trace.trace_id,
-          parent_trace_id: options.parent_trace_id,
           metadata: options.metadata,
         },
         fn

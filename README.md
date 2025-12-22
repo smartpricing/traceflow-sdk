@@ -172,9 +172,9 @@ async function processOrder(orderId: string) {
 }
 ```
 
-### 3. **Distributed Tracing**
+### 3. **Cross-Service Tracing**
 
-Propagate traces across services:
+Share trace context across services:
 
 ```typescript
 // Service A: Start trace
@@ -189,13 +189,11 @@ await fetch('https://service-b/api/endpoint', {
   },
 });
 
-// Service B: Continue trace
-const parentTraceId = req.headers['x-trace-id'];
+// Service B: Retrieve same trace
+const traceId = req.headers['x-trace-id'];
 
-const childTrace = await sdk.startTrace({
-  trace_type: 'email_notification',
-  parent_trace_id: parentTraceId,
-});
+const trace = await sdk.getTrace(traceId);
+await trace.startStep({ name: 'Send Email' });
 ```
 
 ### 4. **Hybrid Pattern: Context + Manual Access**
@@ -348,10 +346,18 @@ const trace = await sdk.startTrace({
   tags?: string[];          // Tags for filtering
   metadata?: object;        // Custom metadata
   params?: any;             // Input parameters
-  parent_trace_id?: string; // For distributed tracing
   idempotency_key?: string; // For idempotency
+  trace_timeout_ms?: number; // Custom timeout for this trace (milliseconds)
+  step_timeout_ms?: number;  // Custom timeout for steps in this trace (milliseconds)
 });
 ```
+
+**Custom Timeouts:**
+- If not specified, the service uses its default timeout settings
+- `trace_timeout_ms`: Maximum time for the entire trace to complete
+- `step_timeout_ms`: Maximum time for each step to complete
+- Use for processes with known execution time characteristics
+- Examples: Quick APIs (5s), Batch jobs (10m), ML training (2h)
 
 #### `getTrace(traceId): Promise<TraceHandle>`
 
@@ -485,11 +491,15 @@ const traceflow = new TraceFlowSDK({
 
 // Middleware
 app.use(async (req, res, next) => {
-  const trace = await traceflow.startTrace({
-    trace_type: 'http_request',
-    title: `${req.method} ${req.path}`,
-    parent_trace_id: req.headers['x-trace-id'],
-  });
+  // Use trace ID from header if present, otherwise create new
+  const traceId = req.headers['x-trace-id'];
+  
+  const trace = traceId
+    ? await traceflow.getTrace(traceId)
+    : await traceflow.startTrace({
+        trace_type: 'http_request',
+        title: `${req.method} ${req.path}`,
+      });
 
   req.trace = trace;
   res.setHeader('x-trace-id', trace.trace_id);
@@ -595,7 +605,6 @@ The SDK emits events, not state updates:
     | 'step_failed'
     | 'log_emitted';
   trace_id: string;
-  parent_trace_id?: string;
   step_id?: string;
   timestamp: string;
   source: string;
@@ -652,7 +661,8 @@ await sdk.shutdown();
 - [`examples/http-transport.ts`](./examples/http-transport.ts) - HTTP transport usage
 - [`examples/kafka-transport.ts`](./examples/kafka-transport.ts) - Kafka transport usage
 - [`examples/microservice-example.ts`](./examples/microservice-example.ts) - Full microservice integration
-- [`examples/hybrid-pattern.ts`](./examples/hybrid-pattern.ts) - **NEW:** Hybrid context + manual access patterns
+- [`examples/hybrid-pattern.ts`](./examples/hybrid-pattern.ts) - Hybrid context + manual access patterns
+- [`examples/custom-timeouts.ts`](./examples/custom-timeouts.ts) - **NEW:** Custom trace and step timeouts
 
 ## 🤝 Contributing
 

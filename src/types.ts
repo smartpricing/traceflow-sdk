@@ -28,7 +28,6 @@ export interface TraceEvent {
   event_id: string;
   event_type: TraceEventType;
   trace_id: string;
-  parent_trace_id?: string;
   step_id?: string;
   timestamp: string;
   source: string;
@@ -121,8 +120,9 @@ export interface StartTraceOptions {
   tags?: string[];
   metadata?: Record<string, any>;
   params?: any;
-  parent_trace_id?: string;
   idempotency_key?: string;
+  trace_timeout_ms?: number; // Custom timeout for this trace
+  step_timeout_ms?: number; // Custom timeout for steps in this trace
 }
 
 export interface FinishTraceOptions {
@@ -192,7 +192,6 @@ export interface TraceTransport {
 export interface TraceContext {
   trace_id: string;
   step_id?: string;
-  parent_trace_id?: string;
   metadata?: Record<string, any>;
 }
 
@@ -246,6 +245,8 @@ export interface HTTPTracePayload {
   error?: string;
   last_activity_at?: string;
   idempotency_key?: string;
+  trace_timeout_ms?: number;
+  step_timeout_ms?: number;
 }
 
 export interface HTTPStepPayload {

@@ -105,6 +105,16 @@ export interface TraceFlowSDKConfig {
   autoFlushOnExit?: boolean;
   flushTimeoutMs?: number;
   silentErrors?: boolean; // Never throw, always swallow errors
+  
+  // Logging options
+  enableLogging?: boolean; // Enable/disable SDK logging (default: true)
+  logLevel?: 'debug' | 'info' | 'warn' | 'error'; // Minimum log level (default: 'info')
+  logger?: {
+    debug: (message: string, ...args: any[]) => void;
+    info: (message: string, ...args: any[]) => void;
+    warn: (message: string, ...args: any[]) => void;
+    error: (message: string, ...args: any[]) => void;
+  };
 }
 
 // ============================================================================

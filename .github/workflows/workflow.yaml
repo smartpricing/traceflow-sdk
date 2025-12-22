@@ -27,7 +27,7 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Configure NPM for private packages
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NO_TWOFA_NPM_TOKEN }}" > ~/.npmrc
 
       - name: Install & Build
         run: |

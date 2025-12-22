@@ -1,6 +1,8 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
+
+### 2.2.1 (2025-12-22)
 
 ## 2.2.0 (2025-12-21) - Custom Timeouts & Simplified Tracing
 
@@ -422,4 +424,3 @@ For v1.x changelog, see [CHANGELOG_V1.md](./CHANGELOG_V1.md)
 ---
 
 Built with ❤️ by Smartpricing
-

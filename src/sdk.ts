@@ -1,6 +1,22 @@
 /**
  * TraceFlow SDK v2 - Main SDK Class
- * Stateless, event-based tracing SDK
+ * Stateless, event-based tracing SDK for distributed systems
+ * 
+ * @example
+ * ```typescript
+ * const sdk = new TraceFlowSDK({
+ *   transport: 'http',
+ *   source: 'my-service',
+ *   endpoint: 'http://localhost:3009',
+ *   enableLogging: true,
+ *   logLevel: 'info'
+ * });
+ * 
+ * const trace = await sdk.startTrace({ title: 'My Process' });
+ * const step = await trace.startStep({ name: 'Step 1' });
+ * await step.finish({ output: 'done' });
+ * await trace.finish({ result: 'success' });
+ * ```
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -20,19 +36,57 @@ import { ContextManager } from './context-manager';
 import { TraceHandleImpl, StepHandleImpl } from './handles';
 import { HTTPTransport } from './transports/http-transport';
 import { KafkaTransport } from './transports/kafka-transport';
+import { Logger } from './logger';
 
 /**
- * Main SDK class - Stateless trace tracking
+ * Main SDK class for TraceFlow distributed tracing
+ * 
+ * The SDK provides a stateless, event-based architecture for tracking
+ * traces and steps across distributed systems. It supports both HTTP
+ * and Kafka transports for maximum flexibility.
+ * 
+ * @remarks
+ * The SDK never throws exceptions (when silentErrors: true), making it
+ * safe to use in production without impacting your application's stability.
+ * 
+ * @public
  */
 export class TraceFlowSDK {
   private config: TraceFlowSDKConfig;
   private transport: TraceTransport;
   private contextManager: ContextManager;
+  private logger: Logger;
   private activeTraces: Set<string> = new Set();
   private activeSteps: Set<string> = new Set();
   private shutdownHandlers: Array<() => Promise<void>> = [];
   private exitHandlerRegistered: boolean = false;
 
+  /**
+   * Creates a new TraceFlow SDK instance
+   * 
+   * @param config - SDK configuration options
+   * 
+   * @example
+   * ```typescript
+   * // HTTP Transport
+   * const sdk = new TraceFlowSDK({
+   *   transport: 'http',
+   *   source: 'my-service',
+   *   endpoint: 'http://localhost:3009',
+   *   apiKey: 'your-api-key'
+   * });
+   * 
+   * // Kafka Transport
+   * const sdk = new TraceFlowSDK({
+   *   transport: 'kafka',
+   *   source: 'my-service',
+   *   kafka: {
+   *     brokers: ['localhost:9092'],
+   *     topic: 'traceflow-events'
+   *   }
+   * });
+   * ```
+   */
   constructor(config: TraceFlowSDKConfig) {
     this.config = {
       silentErrors: true,
@@ -41,11 +95,28 @@ export class TraceFlowSDK {
       maxRetries: 3,
       retryDelay: 1000,
       enableCircuitBreaker: true,
+      enableLogging: true,
+      logLevel: 'info',
       ...config,
     };
 
+    // Initialize logger
+    this.logger = new Logger({
+      enabled: this.config.enableLogging,
+      minLevel: this.config.logLevel,
+      customLogger: this.config.logger,
+    });
+
+    this.logger.info('Initializing TraceFlow SDK', {
+      transport: this.config.transport,
+      source: this.config.source,
+      silentErrors: this.config.silentErrors,
+      autoFlushOnExit: this.config.autoFlushOnExit,
+    });
+
     // Initialize context manager
     this.contextManager = new ContextManager();
+    this.logger.debug('Context manager initialized');
 
     // Initialize transport
     this.transport = this.createTransport();
@@ -57,20 +128,39 @@ export class TraceFlowSDK {
   }
 
   /**
-   * Get an existing trace by ID
-   * Makes HTTP call to fetch current state from service
+   * Retrieve an existing trace by ID from the service
+   * 
+   * Makes an HTTP call to fetch the current state of a trace from the TraceFlow service.
+   * This is useful for continuing a trace across different services or execution contexts.
+   * 
+   * @param traceId - The unique identifier of the trace to retrieve
+   * @returns A TraceHandle for interacting with the trace
+   * 
+   * @remarks
+   * - Only works with HTTP transport
+   * - Updates internal context with the retrieved trace info
+   * - In silent mode, returns a handle even if the trace doesn't exist
+   * 
+   * @example
+   * ```typescript
+   * // Service B continues a trace started by Service A
+   * const traceId = request.headers['x-trace-id'];
+   * const trace = await sdk.getTrace(traceId);
+   * await trace.startStep({ name: 'Service B Processing' });
+   * ```
    */
   async getTrace(traceId: string): Promise<TraceHandle> {
-    console.log(`[TraceFlow] Getting trace: ${traceId}`);
+    this.logger.info(`Getting trace: ${traceId}`);
 
     // Only HTTP transport supports state retrieval
     if (this.config.transport !== 'http') {
-      console.warn('[TraceFlow] getTrace() only supported with HTTP transport');
-      // Return handle anyway (stateless mode)
+      this.logger.warn('getTrace() only supported with HTTP transport, returning stateless handle');
       return this.createTraceHandle(traceId);
     }
 
     try {
+      this.logger.debug(`Fetching trace state from service: ${traceId}`);
+      
       // Fetch current state from service
       const response = await fetch(
         `${this.config.endpoint}/api/v1/traces/${traceId}/state`,
@@ -81,13 +171,16 @@ export class TraceFlowSDK {
 
       if (!response.ok) {
         if (response.status === 404) {
+          this.logger.warn(`Trace not found: ${traceId}`);
           throw new Error(`Trace not found: ${traceId}`);
         }
+        this.logger.error(`Failed to get trace: HTTP ${response.status}`);
         throw new Error(`Failed to get trace: ${response.status}`);
       }
 
       const state = await response.json();
-      console.log(`[TraceFlow] Retrieved trace ${traceId} (status: ${state.status})`);
+      this.logger.info(`Retrieved trace ${traceId}`, { status: state.status });
+      this.logger.debug(`Trace state:`, state);
 
       // Update context with trace info
       this.contextManager.updateContext({
@@ -99,7 +192,7 @@ export class TraceFlowSDK {
       return this.createTraceHandle(traceId);
     } catch (error: any) {
       if (this.config.silentErrors) {
-        console.error('[TraceFlow] Error getting trace (silenced):', error.message);
+        this.logger.error(`Error getting trace (silenced): ${error.message}`);
         return this.createTraceHandle(traceId);
       }
       throw error;
@@ -107,15 +200,40 @@ export class TraceFlowSDK {
   }
 
   /**
-   * Get current trace from context
+   * Get the current active trace from context
+   * 
+   * Returns the trace handle for the currently active trace in the execution context.
+   * Uses AsyncLocalStorage to maintain context across async operations.
+   * 
+   * @returns The current TraceHandle or null if no trace is active
+   * 
+   * @remarks
+   * - Does not make any HTTP calls
+   * - Returns immediately from local context
+   * - Useful for accessing trace in nested function calls
+   * 
+   * @example
+   * ```typescript
+   * await sdk.startTrace({ title: 'My Process' });
+   * 
+   * // Later in a nested function...
+   * async function processData() {
+   *   const trace = sdk.getCurrentTrace();
+   *   if (trace) {
+   *     await trace.log('Processing data...');
+   *   }
+   * }
+   * ```
    */
   getCurrentTrace(): TraceHandle | null {
     const context = this.contextManager.getCurrentContext();
     
     if (!context?.trace_id) {
+      this.logger.debug('No active trace in context');
       return null;
     }
 
+    this.logger.debug(`Found active trace in context: ${context.trace_id}`);
     return this.createTraceHandle(context.trace_id);
   }
 

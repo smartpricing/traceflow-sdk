@@ -42,6 +42,10 @@ export {
 export { HTTPTransport } from './transports/http-transport';
 export { KafkaTransport } from './transports/kafka-transport';
 
+// Logger (for custom logging)
+export { Logger } from './logger';
+export type { LoggerConfig } from './logger';
+
 // Context manager (for advanced usage)
 export { ContextManager } from './context-manager';
 

@@ -34,3 +34,12 @@ coverage/
 *.tsbuildinfo
 .eslintcache
 
+# PHP
+php/laravel/vendor
+php/laravel/composer.lock
+php/laravel/.phpunit.result.cache
+
+# Test files with credentials (DO NOT COMMIT)
+# Use .example files as templates, then copy and add your credentials
+test-live.php
+**/test-live.php

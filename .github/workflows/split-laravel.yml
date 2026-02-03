@@ -1,0 +1,53 @@
+name: Split Laravel Package
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'php/laravel/**'
+      - '.github/workflows/split-laravel.yml'
+  release:
+    types: [created]
+  workflow_dispatch:
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    name: Split php/laravel to separate repository
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for subtree split
+
+      - name: Cache splitsh-lite
+        uses: actions/cache@v4
+        with:
+          path: '/usr/local/bin/splitsh-lite'
+          key: ${{ runner.os }}-splitsh-lite-v1
+
+      - name: Install splitsh-lite
+        run: |
+          if [ ! -f "/usr/local/bin/splitsh-lite" ]; then
+            curl -L https://github.com/splitsh/lite/releases/download/v1.0.1/lite_linux_amd64.tar.gz | tar -xz
+            sudo mv splitsh-lite /usr/local/bin/
+            sudo chmod +x /usr/local/bin/splitsh-lite
+          fi
+
+      - name: Split php/laravel subdirectory
+        run: |
+          splitsh-lite --prefix=php/laravel --target=refs/heads/split-laravel
+
+      - name: Push to split repository
+        run: |
+          git remote add split-repo https://x-access-token:${{ secrets.LARAVEL_SPLIT_TOKEN }}@github.com/smartpricing/traceflow-laravel.git || true
+          git push split-repo split-laravel:master --force
+        env:
+          GITHUB_TOKEN: ${{ secrets.LARAVEL_SPLIT_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "✅ Successfully split php/laravel to smartpricing/traceflow-laravel"
+          echo "📦 Package: smartness/traceflow-laravel"
+          echo "🔗 Repository: https://github.com/smartpricing/traceflow-laravel"

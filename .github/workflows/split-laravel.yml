@@ -3,6 +3,8 @@ name: Split Laravel Package
 on:
   push:
     branches: [master, main]
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
     paths:
       - 'php/laravel/**'
       - '.github/workflows/split-laravel.yml'
@@ -40,7 +42,15 @@ jobs:
 
       - name: Split php/laravel subdirectory
         run: |
+          # Split the subdirectory
           splitsh-lite --prefix=php/laravel --target=refs/heads/split-laravel
+
+          # If this is a tag, also create the split tag
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "Creating tag: ${TAG_NAME}"
+            git tag "${TAG_NAME}" split-laravel
+          fi
 
       - name: Configure Git
         run: |
@@ -61,9 +71,16 @@ jobs:
           # Use PAT for authentication (bypasses workflow permission restrictions)
           git remote add split-repo "https://${SPLIT_TOKEN}@github.com/smartpricing/traceflow-laravel.git" 2>/dev/null || git remote set-url split-repo "https://${SPLIT_TOKEN}@github.com/smartpricing/traceflow-laravel.git"
 
-          # Push with detailed output for debugging
-          echo "Pushing to split repository..."
+          # Push branch with detailed output for debugging
+          echo "Pushing branch to split repository..."
           git push split-repo split-laravel:main --force --verbose
+
+          # If this is a tag, push the tag too
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "Pushing tag ${TAG_NAME} to split repository..."
+            git push split-repo "${TAG_NAME}" --verbose
+          fi
 
       - name: Summary
         run: |
@@ -71,3 +88,11 @@ jobs:
           echo "📦 Package: smartness/traceflow-laravel"
           echo "🔗 Repository: https://github.com/smartpricing/traceflow-laravel"
           echo "🌿 Branch: main"
+
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "🏷️  Tag: ${TAG_NAME}"
+            echo ""
+            echo "🎉 Release ${TAG_NAME} is ready!"
+            echo "📦 Install with: composer require smartness/traceflow-laravel:${TAG_NAME}"
+          fi

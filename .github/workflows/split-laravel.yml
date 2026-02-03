@@ -39,12 +39,15 @@ jobs:
         run: |
           splitsh-lite --prefix=php/laravel --target=refs/heads/split-laravel
 
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Push to split repository
         run: |
           git remote add split-repo https://x-access-token:${{ secrets.LARAVEL_SPLIT_TOKEN }}@github.com/smartpricing/traceflow-laravel.git || true
           git push split-repo split-laravel:master --force
-        env:
-          GITHUB_TOKEN: ${{ secrets.LARAVEL_SPLIT_TOKEN }}
 
       - name: Summary
         run: |

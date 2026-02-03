@@ -2,7 +2,7 @@ name: Split Laravel Package
 
 on:
   push:
-    branches: [master]
+    branches: [master, main]
     paths:
       - 'php/laravel/**'
       - '.github/workflows/split-laravel.yml'
@@ -47,10 +47,11 @@ jobs:
       - name: Push to split repository
         run: |
           git remote add split-repo https://x-access-token:${{ secrets.LARAVEL_SPLIT_TOKEN }}@github.com/smartpricing/traceflow-laravel.git || true
-          git push split-repo split-laravel:master --force
+          git push split-repo split-laravel:main --force
 
       - name: Summary
         run: |
           echo "✅ Successfully split php/laravel to smartpricing/traceflow-laravel"
           echo "📦 Package: smartness/traceflow-laravel"
           echo "🔗 Repository: https://github.com/smartpricing/traceflow-laravel"
+          echo "🌿 Branch: main"

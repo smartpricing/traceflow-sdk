@@ -14,12 +14,15 @@ jobs:
   split:
     runs-on: ubuntu-latest
     name: Split php/laravel to separate repository
+    permissions:
+      contents: read  # We only need read for this repo, PAT handles write to split repo
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history needed for subtree split
+          token: ${{ secrets.GITHUB_TOKEN }}  # Use default token for checkout
 
       - name: Cache splitsh-lite
         uses: actions/cache@v4
@@ -45,9 +48,15 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Push to split repository
+        env:
+          SPLIT_TOKEN: ${{ secrets.LARAVEL_SPLIT_TOKEN }}
         run: |
-          git remote add split-repo https://x-access-token:${{ secrets.LARAVEL_SPLIT_TOKEN }}@github.com/smartpricing/traceflow-laravel.git || true
-          git push split-repo split-laravel:main --force
+          # Use PAT for authentication (bypasses workflow permission restrictions)
+          git remote add split-repo "https://${SPLIT_TOKEN}@github.com/smartpricing/traceflow-laravel.git" 2>/dev/null || git remote set-url split-repo "https://${SPLIT_TOKEN}@github.com/smartpricing/traceflow-laravel.git"
+
+          # Push with detailed output for debugging
+          echo "Pushing to split repository..."
+          git push split-repo split-laravel:main --force --verbose
 
       - name: Summary
         run: |

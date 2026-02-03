@@ -47,10 +47,17 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+          # Remove GitHub's automatic credential helper (it interferes with our PAT)
+          git config --global --unset-all http.https://github.com/.extraheader || true
+
       - name: Push to split repository
         env:
           SPLIT_TOKEN: ${{ secrets.LARAVEL_SPLIT_TOKEN }}
         run: |
+          # Ensure no credential helpers interfere
+          git config --local --unset-all credential.helper || true
+          git config --local --unset-all http.https://github.com/.extraheader || true
+
           # Use PAT for authentication (bypasses workflow permission restrictions)
           git remote add split-repo "https://${SPLIT_TOKEN}@github.com/smartpricing/traceflow-laravel.git" 2>/dev/null || git remote set-url split-repo "https://${SPLIT_TOKEN}@github.com/smartpricing/traceflow-laravel.git"
 

@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## 2.3.0 (2026-02-18) - Context Propagation & Queue Support (PHP/Laravel)
+
+### New Features
+
+#### Static Context Store (`TraceFlowContext`)
+- **`TraceFlowContext::currentTraceId()`** - Access current trace ID from anywhere without DI
+- **`TraceFlowContext::set()` / `clear()`** - Managed automatically by middleware and SDK
+- **`toArray()` / `restore()`** - Serialize/deserialize context for queue propagation
+
+#### Automatic Queue Context Propagation (`TracedJob` trait)
+- **`TracedJob` trait** - Add to any Laravel job for automatic trace context capture
+- **`RestoreTraceContext` middleware** - Restores context before job `handle()` runs
+- **Infinite chaining** - Job A dispatching Job B dispatching Job C all share the same trace
+
+#### SDK Enhancements
+- **`setCurrentTraceId()`** - Public method for queue middleware to restore SDK state
+- **`getCurrentTrace()`** - Now falls back to `TraceFlowContext` when SDK state is empty
+
+### Changes
+
+- **Renamed `TRACEFLOW_ENDPOINT` to `TRACEFLOW_URL`** - Environment variable for API endpoint
+- **Middleware** now sets/clears `TraceFlowContext` automatically
+- **Config** added `queue.propagate_context` option
+
 ### 2.2.1 (2025-12-22)
 
 ## 2.2.0 (2025-12-21) - Custom Timeouts & Simplified Tracing

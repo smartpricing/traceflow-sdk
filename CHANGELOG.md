@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## 2.3.2 (2026-02-19) - Fix traceflow:test Command
+
+### Bug Fixes
+
+- **traceflow:test command** now properly detects and reports failures instead of always showing "All checks passed"
+- Connectivity check no longer treats HTTP 404 as success
+- Authentication errors (401/403) are caught and reported with actionable guidance
+- Replaced fire-and-forget async SDK calls with direct synchronous HTTP requests for reliable diagnostics
+- Added early validation for missing `TRACEFLOW_API_KEY`
+- API key preview shown in output for easier debugging
+
 ## 2.3.0 (2026-02-18) - Context Propagation & Queue Support (PHP/Laravel)
 
 ### New Features

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## 2.3.3 (2026-02-19) - Add composer test:connectivity Script
+
+### New Features
+
+- **`composer test:connectivity`** - Standalone connectivity test script that verifies the full trace lifecycle (connectivity, auth, trace, step, log) against a real TraceFlow service
+- Requires only `TRACEFLOW_URL` and `TRACEFLOW_API_KEY` environment variables
+- Color-coded output with per-step OK/FAILED reporting
+
 ## 2.3.2 (2026-02-19) - Fix traceflow:test Command
 
 ### Bug Fixes

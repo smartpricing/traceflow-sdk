@@ -56,10 +56,6 @@ export type { TraceFlowExpressOptions } from './middleware/express';
 export { traceflowFastifyPlugin } from './middleware/fastify';
 export type { TraceFlowFastifyOptions } from './middleware/fastify';
 
-// Queue/job context propagation
-export { serializeTraceContext, restoreTraceContext, createTracedProcessor } from './integrations/queue';
-export type { SerializedTraceContext, TracedProcessorOptions } from './integrations/queue';
-
 // Context manager (for advanced usage)
 export { ContextManager } from './context-manager';
 

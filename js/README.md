@@ -17,7 +17,6 @@ Trace your distributed systems with confidence using HTTP or Kafka transport.
 - **☸️ Kubernetes-Ready** - Graceful shutdown and auto-cleanup
 - **📝 Event-Based** - Append-only event model
 - **🔌 Framework Middleware** - Built-in Express and Fastify middleware for automatic request tracing
-- **📨 Queue Integration** - Trace context propagation across job queues (BullMQ, etc.)
 - **🏥 Health Check** - Built-in connectivity verification
 
 ## 🏗️ Architecture
@@ -525,24 +524,6 @@ import { TraceFlowSDK, traceflowFastifyPlugin } from '@dev.smartpricing/traceflo
 
 const sdk = new TraceFlowSDK({ /* config */ });
 fastify.register(traceflowFastifyPlugin, { sdk, ignorePaths: ['/health'] });
-```
-
-### Queue/Job Context Propagation
-
-Propagate trace context across job queues (BullMQ, etc.):
-
-```typescript
-import { serializeTraceContext, createTracedProcessor } from '@dev.smartpricing/traceflow-sdk';
-
-// Producer: embed trace context in job data
-const ctx = serializeTraceContext(sdk);
-await queue.add('process', { ...jobData, _traceContext: ctx });
-
-// Consumer: auto-restore context with traced processor
-const worker = new Worker('my-queue', createTracedProcessor(sdk, async (job, trace) => {
-  await trace?.log('Processing job...');
-  return { processed: true };
-}));
 ```
 
 ### Health Check

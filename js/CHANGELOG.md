@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## 2.3.4 (2026-02-28) - Remove Queue Integration
+
+### Removed
+
+- **Queue/job context propagation helpers** (`serializeTraceContext`, `restoreTraceContext`, `createTracedProcessor`) - These were ported from the PHP/Laravel SDK where they integrate with Laravel's built-in queue system. In JS there's no equivalent framework convention, and the serialize/deserialize logic is trivial enough to not warrant dedicated helpers. This also keeps the SDK fully stateless as intended.
+
 ## 2.3.3 (2026-02-19) - Add composer test:connectivity Script
 
 ### New Features

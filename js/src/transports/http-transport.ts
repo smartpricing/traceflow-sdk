@@ -9,10 +9,12 @@ import {
   TraceTransport,
   TraceStatus,
   StepStatus,
+  HealthCheckResult,
   HTTPTracePayload,
   HTTPStepPayload,
   HTTPLogPayload,
 } from '../types';
+import { LoggerLike } from '../logger';
 
 export interface HTTPTransportConfig {
   endpoint: string;
@@ -23,6 +25,8 @@ export interface HTTPTransportConfig {
   maxRetries?: number;
   retryDelay?: number;
   enableCircuitBreaker?: boolean;
+  circuitBreakerThreshold?: number;
+  circuitBreakerTimeout?: number;
   silentErrors?: boolean;
 }
 
@@ -38,25 +42,34 @@ interface QueuedRequest {
  */
 export class HTTPTransport implements TraceTransport {
   private config: Required<HTTPTransportConfig>;
+  private logger: LoggerLike;
   private queue: QueuedRequest[] = [];
+  private pendingEvents: TraceEvent[] = [];
   private circuitOpen: boolean = false;
   private circuitOpenUntil: number = 0;
   private failureCount: number = 0;
-  private readonly CIRCUIT_THRESHOLD = 5;
-  private readonly CIRCUIT_TIMEOUT = 60000; // 1 minute
+  private readonly circuitThreshold: number;
+  private readonly circuitTimeout: number;
 
-  constructor(config: HTTPTransportConfig) {
+  constructor(config: HTTPTransportConfig, logger?: LoggerLike) {
     this.config = {
       endpoint: config.endpoint,
       apiKey: config.apiKey || '',
       username: config.username || '',
       password: config.password || '',
-      timeout: config.timeout || 5000,
-      maxRetries: config.maxRetries || 3,
-      retryDelay: config.retryDelay || 1000,
+      timeout: config.timeout ?? 5000,
+      maxRetries: config.maxRetries ?? 3,
+      retryDelay: config.retryDelay ?? 1000,
       enableCircuitBreaker: config.enableCircuitBreaker ?? true,
+      circuitBreakerThreshold: config.circuitBreakerThreshold ?? 5,
+      circuitBreakerTimeout: config.circuitBreakerTimeout ?? 60000,
       silentErrors: config.silentErrors ?? true,
     };
+
+    this.circuitThreshold = this.config.circuitBreakerThreshold;
+    this.circuitTimeout = this.config.circuitBreakerTimeout;
+    const noop = () => {};
+    this.logger = logger || { debug: noop, info: noop, warn: noop, error: noop };
   }
 
   /**
@@ -66,18 +79,16 @@ export class HTTPTransport implements TraceTransport {
     try {
       // Check circuit breaker
       if (this.isCircuitOpen()) {
-        if (this.config.silentErrors) {
-          console.warn(`[TraceFlow HTTP] Circuit open, queueing event: ${event.event_type}`);
-          return;
+        this.pendingEvents.push(event);
+        this.logger.warn(`Circuit open, queued event: ${event.event_type} (${this.pendingEvents.length} pending)`);
+        if (!this.config.silentErrors) {
+          throw new Error('Circuit breaker is open');
         }
-        throw new Error('Circuit breaker is open');
+        return;
       }
 
       // Convert event to HTTP payload and send
       await this.sendEventToAPI(event);
-      
-      // Reset failure count on success
-      this.failureCount = 0;
     } catch (error) {
       this.handleError(error, event);
     }
@@ -87,12 +98,29 @@ export class HTTPTransport implements TraceTransport {
    * Flush any pending events
    */
   async flush(): Promise<void> {
+    // Flush pending events from circuit breaker queue
+    if (this.pendingEvents.length > 0) {
+      this.logger.info(`Flushing ${this.pendingEvents.length} circuit-breaker-queued events...`);
+      const events = [...this.pendingEvents];
+      this.pendingEvents = [];
+      for (const event of events) {
+        try {
+          await this.sendEventToAPI(event);
+        } catch (error: any) {
+          if (!this.config.silentErrors) {
+            this.logger.error('Failed to flush pending event:', error);
+          }
+        }
+      }
+    }
+
+    // Flush queued requests
     if (this.queue.length === 0) {
       return;
     }
 
-    console.log(`[TraceFlow HTTP] Flushing ${this.queue.length} queued requests...`);
-    
+    this.logger.info(`Flushing ${this.queue.length} queued requests...`);
+
     const requests = [...this.queue];
     this.queue = [];
 
@@ -101,7 +129,7 @@ export class HTTPTransport implements TraceTransport {
         await this.executeRequest(req.url, req.method, req.body);
       } catch (error) {
         if (!this.config.silentErrors) {
-          console.error('[TraceFlow HTTP] Failed to flush request:', error);
+          this.logger.error('Failed to flush request:', error);
         }
       }
     }
@@ -112,6 +140,45 @@ export class HTTPTransport implements TraceTransport {
    */
   async shutdown(): Promise<void> {
     await this.flush();
+  }
+
+  /**
+   * Check connectivity to the TraceFlow backend
+   */
+  async healthCheck(): Promise<HealthCheckResult> {
+    const start = Date.now();
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (this.config.apiKey) {
+        headers['X-API-Key'] = this.config.apiKey;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+
+      try {
+        const response = await fetch(`${this.config.endpoint}/api/v1/health`, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+
+        const latencyMs = Date.now() - start;
+
+        if (!response.ok) {
+          return { ok: false, latencyMs, error: `HTTP ${response.status}: ${response.statusText}` };
+        }
+
+        return { ok: true, latencyMs };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } catch (error: any) {
+      return { ok: false, latencyMs: Date.now() - start, error: error.message };
+    }
   }
 
   /**
@@ -143,7 +210,7 @@ export class HTTPTransport implements TraceTransport {
         break;
       
       default:
-        console.warn(`[TraceFlow HTTP] Unknown event type: ${event.event_type}`);
+        this.logger.warn(`Unknown event type: ${event.event_type}`);
     }
   }
 
@@ -295,6 +362,8 @@ export class HTTPTransport implements TraceTransport {
   ): Promise<void> {
     try {
       await this.executeRequest(url, method, body);
+      // Reset failure count on success
+      this.failureCount = 0;
     } catch (error: any) {
       // Retry on network errors or 5xx status codes
       const shouldRetry = 
@@ -303,7 +372,7 @@ export class HTTPTransport implements TraceTransport {
 
       if (shouldRetry) {
         const delay = this.calculateBackoff(retries);
-        console.warn(`[TraceFlow HTTP] Retry ${retries + 1}/${this.config.maxRetries} after ${delay}ms`);
+        this.logger.warn(`Retry ${retries + 1}/${this.config.maxRetries} after ${delay}ms`);
         
         await this.sleep(delay);
         return this.executeRequestWithRetry(url, method, body, retries + 1);
@@ -316,7 +385,7 @@ export class HTTPTransport implements TraceTransport {
         throw error;
       }
       
-      console.error('[TraceFlow HTTP] Request failed after retries:', error.message);
+      this.logger.error('Request failed after retries:', error.message);
     }
   }
 
@@ -395,10 +464,10 @@ export class HTTPTransport implements TraceTransport {
 
     this.failureCount++;
     
-    if (this.failureCount >= this.CIRCUIT_THRESHOLD) {
+    if (this.failureCount >= this.circuitThreshold) {
       this.circuitOpen = true;
-      this.circuitOpenUntil = Date.now() + this.CIRCUIT_TIMEOUT;
-      console.warn(`[TraceFlow HTTP] Circuit breaker opened for ${this.CIRCUIT_TIMEOUT}ms`);
+      this.circuitOpenUntil = Date.now() + this.circuitTimeout;
+      this.logger.warn(`Circuit breaker opened for ${this.circuitTimeout}ms`);
     }
   }
 
@@ -411,12 +480,31 @@ export class HTTPTransport implements TraceTransport {
     }
 
     if (this.circuitOpen && Date.now() > this.circuitOpenUntil) {
-      console.log('[TraceFlow HTTP] Circuit breaker closed, resuming requests');
+      this.logger.info('Circuit breaker closed, resuming requests');
       this.circuitOpen = false;
       this.failureCount = 0;
+      this.drainPendingEvents();
     }
 
     return this.circuitOpen;
+  }
+
+  /**
+   * Drain pending events queued during circuit break
+   */
+  private drainPendingEvents(): void {
+    if (this.pendingEvents.length === 0) return;
+
+    const events = [...this.pendingEvents];
+    this.pendingEvents = [];
+    this.logger.info(`Draining ${events.length} pending events after circuit close`);
+
+    // Fire-and-forget: send each event asynchronously
+    for (const event of events) {
+      this.sendEventToAPI(event).catch((err) => {
+        this.logger.error('Failed to drain pending event:', err.message);
+      });
+    }
   }
 
   /**
@@ -424,7 +512,7 @@ export class HTTPTransport implements TraceTransport {
    */
   private handleError(error: any, event: TraceEvent): void {
     if (this.config.silentErrors) {
-      console.error('[TraceFlow HTTP] Error sending event (silenced):', error.message);
+      this.logger.error('Error sending event (silenced):', error.message);
     } else {
       throw error;
     }

@@ -28,6 +28,7 @@ export type {
   
   // Transport
   TraceTransport,
+  HealthCheckResult,
 } from './types';
 
 // Enums
@@ -44,7 +45,20 @@ export { KafkaTransport } from './transports/kafka-transport';
 
 // Logger (for custom logging)
 export { Logger } from './logger';
-export type { LoggerConfig } from './logger';
+export type { LoggerConfig, LoggerLike } from './logger';
+
+// Event factory
+export { createTraceEvent } from './event-factory';
+
+// Middleware
+export { createExpressMiddleware } from './middleware/express';
+export type { TraceFlowExpressOptions } from './middleware/express';
+export { traceflowFastifyPlugin } from './middleware/fastify';
+export type { TraceFlowFastifyOptions } from './middleware/fastify';
+
+// Queue/job context propagation
+export { serializeTraceContext, restoreTraceContext, createTracedProcessor } from './integrations/queue';
+export type { SerializedTraceContext, TracedProcessorOptions } from './integrations/queue';
 
 // Context manager (for advanced usage)
 export { ContextManager } from './context-manager';

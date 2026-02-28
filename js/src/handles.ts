@@ -16,6 +16,8 @@ import {
   LogLevel,
 } from './types';
 import { ContextManager } from './context-manager';
+import { LoggerLike } from './logger';
+import { createTraceEvent } from './event-factory';
 
 /**
  * Internal trace handle implementation
@@ -25,18 +27,22 @@ export class TraceHandleImpl implements TraceHandle {
   private source: string;
   private sendEvent: (event: TraceEvent) => Promise<void>;
   private contextManager: ContextManager;
+  private logger: LoggerLike;
   private closed: boolean = false;
 
   constructor(
     trace_id: string,
     source: string,
     sendEvent: (event: TraceEvent) => Promise<void>,
-    contextManager: ContextManager
+    contextManager: ContextManager,
+    logger?: LoggerLike
   ) {
     this.trace_id = trace_id;
     this.source = source;
     this.sendEvent = sendEvent;
     this.contextManager = contextManager;
+    const noop = () => {};
+    this.logger = logger || { debug: noop, info: noop, warn: noop, error: noop };
   }
 
   /**
@@ -44,25 +50,17 @@ export class TraceHandleImpl implements TraceHandle {
    */
   async finish(options?: FinishTraceOptions): Promise<void> {
     if (this.closed) {
-      console.warn(`[TraceFlow] Trace ${this.trace_id} already closed`);
+      this.logger.warn(`Trace ${this.trace_id} already closed`);
       return;
     }
 
     this.closed = true;
-
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.TRACE_FINISHED,
-      trace_id: this.trace_id,
-      timestamp: new Date().toISOString(),
-      source: this.source,
-      payload: {
-        result: options?.result,
-        metadata: options?.metadata,
-      },
-    };
-
-    await this.sendEvent(event);
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.TRACE_FINISHED,
+      this.trace_id,
+      this.source,
+      { result: options?.result, metadata: options?.metadata },
+    ));
   }
 
   /**
@@ -70,28 +68,20 @@ export class TraceHandleImpl implements TraceHandle {
    */
   async fail(error: string | Error): Promise<void> {
     if (this.closed) {
-      console.warn(`[TraceFlow] Trace ${this.trace_id} already closed`);
+      this.logger.warn(`Trace ${this.trace_id} already closed`);
       return;
     }
 
     this.closed = true;
-
     const errorMessage = error instanceof Error ? error.message : error;
     const errorStack = error instanceof Error ? error.stack : undefined;
 
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.TRACE_FAILED,
-      trace_id: this.trace_id,
-      timestamp: new Date().toISOString(),
-      source: this.source,
-      payload: {
-        error: errorMessage,
-        stack: errorStack,
-      },
-    };
-
-    await this.sendEvent(event);
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.TRACE_FAILED,
+      this.trace_id,
+      this.source,
+      { error: errorMessage, stack: errorStack },
+    ));
   }
 
   /**
@@ -99,22 +89,17 @@ export class TraceHandleImpl implements TraceHandle {
    */
   async cancel(): Promise<void> {
     if (this.closed) {
-      console.warn(`[TraceFlow] Trace ${this.trace_id} already closed`);
+      this.logger.warn(`Trace ${this.trace_id} already closed`);
       return;
     }
 
     this.closed = true;
-
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.TRACE_CANCELLED,
-      trace_id: this.trace_id,
-      timestamp: new Date().toISOString(),
-      source: this.source,
-      payload: {},
-    };
-
-    await this.sendEvent(event);
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.TRACE_CANCELLED,
+      this.trace_id,
+      this.source,
+      {},
+    ));
   }
 
   /**
@@ -123,22 +108,18 @@ export class TraceHandleImpl implements TraceHandle {
   async startStep(options?: StartStepOptions): Promise<StepHandle> {
     const step_id = options?.step_id || uuidv4();
 
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.STEP_STARTED,
-      trace_id: this.trace_id,
-      step_id,
-      timestamp: new Date().toISOString(),
-      source: this.source,
-      payload: {
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.STEP_STARTED,
+      this.trace_id,
+      this.source,
+      {
         name: options?.name,
         step_type: options?.step_type,
         input: options?.input,
         metadata: options?.metadata,
       },
-    };
-
-    await this.sendEvent(event);
+      step_id,
+    ));
 
     // Update context with step_id
     this.contextManager.updateContext({ step_id });
@@ -148,7 +129,8 @@ export class TraceHandleImpl implements TraceHandle {
       this.trace_id,
       this.source,
       this.sendEvent,
-      this.contextManager
+      this.contextManager,
+      this.logger
     );
   }
 
@@ -156,22 +138,18 @@ export class TraceHandleImpl implements TraceHandle {
    * Log message for this trace
    */
   async log(message: string, options?: LogOptions): Promise<void> {
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.LOG_EMITTED,
-      trace_id: this.trace_id,
-      step_id: options?.step_id,
-      timestamp: new Date().toISOString(),
-      source: this.source,
-      payload: {
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.LOG_EMITTED,
+      this.trace_id,
+      this.source,
+      {
         message,
         level: options?.level || LogLevel.INFO,
         event_type: options?.event_type,
         details: options?.details,
       },
-    };
-
-    await this.sendEvent(event);
+      options?.step_id,
+    ));
   }
 }
 
@@ -184,6 +162,7 @@ export class StepHandleImpl implements StepHandle {
   private source: string;
   private sendEvent: (event: TraceEvent) => Promise<void>;
   private contextManager: ContextManager;
+  private logger: LoggerLike;
   private closed: boolean = false;
 
   constructor(
@@ -191,13 +170,16 @@ export class StepHandleImpl implements StepHandle {
     trace_id: string,
     source: string,
     sendEvent: (event: TraceEvent) => Promise<void>,
-    contextManager: ContextManager
+    contextManager: ContextManager,
+    logger?: LoggerLike
   ) {
     this.step_id = step_id;
     this.trace_id = trace_id;
     this.source = source;
     this.sendEvent = sendEvent;
     this.contextManager = contextManager;
+    const noop = () => {};
+    this.logger = logger || { debug: noop, info: noop, warn: noop, error: noop };
   }
 
   /**
@@ -205,26 +187,18 @@ export class StepHandleImpl implements StepHandle {
    */
   async finish(options?: FinishStepOptions): Promise<void> {
     if (this.closed) {
-      console.warn(`[TraceFlow] Step ${this.step_id} already closed`);
+      this.logger.warn(`Step ${this.step_id} already closed`);
       return;
     }
 
     this.closed = true;
-
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.STEP_FINISHED,
-      trace_id: this.trace_id,
-      step_id: this.step_id,
-      timestamp: new Date().toISOString(),
-      source: this.source,
-      payload: {
-        output: options?.output,
-        metadata: options?.metadata,
-      },
-    };
-
-    await this.sendEvent(event);
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.STEP_FINISHED,
+      this.trace_id,
+      this.source,
+      { output: options?.output, metadata: options?.metadata },
+      this.step_id,
+    ));
 
     // Clear step from context
     this.contextManager.updateContext({ step_id: undefined });
@@ -235,29 +209,21 @@ export class StepHandleImpl implements StepHandle {
    */
   async fail(error: string | Error): Promise<void> {
     if (this.closed) {
-      console.warn(`[TraceFlow] Step ${this.step_id} already closed`);
+      this.logger.warn(`Step ${this.step_id} already closed`);
       return;
     }
 
     this.closed = true;
-
     const errorMessage = error instanceof Error ? error.message : error;
     const errorStack = error instanceof Error ? error.stack : undefined;
 
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.STEP_FAILED,
-      trace_id: this.trace_id,
-      step_id: this.step_id,
-      timestamp: new Date().toISOString(),
-      source: this.source,
-      payload: {
-        error: errorMessage,
-        stack: errorStack,
-      },
-    };
-
-    await this.sendEvent(event);
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.STEP_FAILED,
+      this.trace_id,
+      this.source,
+      { error: errorMessage, stack: errorStack },
+      this.step_id,
+    ));
 
     // Clear step from context
     this.contextManager.updateContext({ step_id: undefined });
@@ -267,22 +233,17 @@ export class StepHandleImpl implements StepHandle {
    * Log message for this step
    */
   async log(message: string, options?: LogOptions): Promise<void> {
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.LOG_EMITTED,
-      trace_id: this.trace_id,
-      step_id: this.step_id,
-      timestamp: new Date().toISOString(),
-      source: this.source,
-      payload: {
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.LOG_EMITTED,
+      this.trace_id,
+      this.source,
+      {
         message,
         level: options?.level || LogLevel.INFO,
         event_type: options?.event_type,
         details: options?.details,
       },
-    };
-
-    await this.sendEvent(event);
+      this.step_id,
+    ));
   }
 }
-

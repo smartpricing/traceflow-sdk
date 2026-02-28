@@ -4,6 +4,7 @@
  */
 
 import { TraceEvent, TraceTransport, KafkaConfig } from '../types';
+import { LoggerLike } from '../logger';
 
 export interface KafkaTransportConfig extends KafkaConfig {
   topic?: string;
@@ -17,16 +18,20 @@ export interface KafkaTransportConfig extends KafkaConfig {
 export class KafkaTransport implements TraceTransport {
   private producer: any; // KafkaJS Producer
   private config: KafkaTransportConfig;
+  private logger: LoggerLike;
   private connected: boolean = false;
   private readonly topic: string;
 
-  constructor(config: KafkaTransportConfig, kafkaClient?: any) {
+  constructor(config: KafkaTransportConfig, kafkaClient?: any, logger?: LoggerLike) {
     this.config = {
       topic: 'traceflow-events',
       silentErrors: true,
       ...config,
     };
     this.topic = this.config.topic!;
+
+    const noop = () => {};
+    this.logger = logger || { debug: noop, info: noop, warn: noop, error: noop };
 
     // Lazy initialization - connect on first send
     if (kafkaClient) {
@@ -64,7 +69,7 @@ export class KafkaTransport implements TraceTransport {
       });
     } catch (error: any) {
       if (this.config.silentErrors) {
-        console.error('[TraceFlow Kafka] Error sending event (silenced):', error.message);
+        this.logger.error('Error sending event (silenced):', error.message);
       } else {
         throw error;
       }
@@ -83,7 +88,7 @@ export class KafkaTransport implements TraceTransport {
       await this.producer.flush();
     } catch (error: any) {
       if (!this.config.silentErrors) {
-        console.error('[TraceFlow Kafka] Error flushing:', error.message);
+        this.logger.error('Error flushing:', error.message);
       }
     }
   }
@@ -99,10 +104,10 @@ export class KafkaTransport implements TraceTransport {
     try {
       await this.producer.disconnect();
       this.connected = false;
-      console.log('[TraceFlow Kafka] Disconnected successfully');
+      this.logger.info('Disconnected successfully');
     } catch (error: any) {
       if (!this.config.silentErrors) {
-        console.error('[TraceFlow Kafka] Error disconnecting:', error.message);
+        this.logger.error('Error disconnecting:', error.message);
       }
     }
   }
@@ -143,10 +148,10 @@ export class KafkaTransport implements TraceTransport {
 
       await this.producer.connect();
       this.connected = true;
-      console.log('[TraceFlow Kafka] Connected successfully');
+      this.logger.info('Connected successfully');
     } catch (error: any) {
       if (this.config.silentErrors) {
-        console.error('[TraceFlow Kafka] Connection failed (silenced):', error.message);
+        this.logger.error('Connection failed (silenced):', error.message);
       } else {
         throw error;
       }

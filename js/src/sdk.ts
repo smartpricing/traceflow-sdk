@@ -37,6 +37,7 @@ import { TraceHandleImpl, StepHandleImpl } from './handles';
 import { HTTPTransport } from './transports/http-transport';
 import { KafkaTransport } from './transports/kafka-transport';
 import { Logger } from './logger';
+import { createTraceEvent } from './event-factory';
 
 /**
  * Main SDK class for TraceFlow distributed tracing
@@ -244,14 +245,12 @@ export class TraceFlowSDK {
   async startTrace(options?: StartTraceOptions): Promise<TraceHandle> {
     const trace_id = options?.trace_id || uuidv4();
 
-    // Create trace started event
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.TRACE_STARTED,
+    // Send trace started event
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.TRACE_STARTED,
       trace_id,
-      timestamp: new Date().toISOString(),
-      source: this.config.source,
-      payload: {
+      this.config.source,
+      {
         trace_type: options?.trace_type,
         title: options?.title,
         description: options?.description,
@@ -263,10 +262,7 @@ export class TraceFlowSDK {
         trace_timeout_ms: options?.trace_timeout_ms,
         step_timeout_ms: options?.step_timeout_ms,
       },
-    };
-
-    // Send event
-    await this.sendEvent(event);
+    ));
 
     // Create and return handle
     return this.createTraceHandle(trace_id);
@@ -314,29 +310,25 @@ export class TraceFlowSDK {
       if (!this.config.silentErrors) {
         throw error;
       }
-      console.warn('[TraceFlow] ' + error.message);
+      this.logger.warn(error.message);
       // Return dummy handle
       return this.createDummyStepHandle();
     }
 
     const step_id = options?.step_id || uuidv4();
 
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.STEP_STARTED,
-      trace_id: context.trace_id,
-      step_id,
-      timestamp: new Date().toISOString(),
-      source: this.config.source,
-      payload: {
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.STEP_STARTED,
+      context.trace_id,
+      this.config.source,
+      {
         name: options?.name,
         step_type: options?.step_type,
         input: options?.input,
         metadata: options?.metadata,
       },
-    };
-
-    await this.sendEvent(event);
+      step_id,
+    ));
 
     // Track active step
     this.activeSteps.add(step_id);
@@ -349,7 +341,8 @@ export class TraceFlowSDK {
       context.trace_id,
       this.config.source,
       this.sendEvent.bind(this),
-      this.contextManager
+      this.contextManager,
+      this.logger
     );
 
     // Auto-close on handle finalization
@@ -366,26 +359,22 @@ export class TraceFlowSDK {
 
     if (!context?.trace_id) {
       // No context, just log to console
-      console.log(`[TraceFlow] ${message}`);
+      this.logger.info(message);
       return;
     }
 
-    const event: TraceEvent = {
-      event_id: uuidv4(),
-      event_type: TraceEventType.LOG_EMITTED,
-      trace_id: context.trace_id,
-      step_id: options?.step_id || context.step_id,
-      timestamp: new Date().toISOString(),
-      source: this.config.source,
-      payload: {
+    await this.sendEvent(createTraceEvent(
+      TraceEventType.LOG_EMITTED,
+      context.trace_id,
+      this.config.source,
+      {
         message,
         level: options?.level || LogLevel.INFO,
         event_type: options?.event_type,
         details: options?.details,
       },
-    };
-
-    await this.sendEvent(event);
+      options?.step_id || context.step_id,
+    ));
   }
 
   /**
@@ -395,7 +384,7 @@ export class TraceFlowSDK {
     const context = this.contextManager.getCurrentContext();
 
     if (!context?.trace_id) {
-      console.warn('[TraceFlow] No active trace context');
+      this.logger.warn('No active trace context');
       return;
     }
 
@@ -411,19 +400,15 @@ export class TraceFlowSDK {
         event_type = TraceEventType.TRACE_FINISHED;
     }
 
-    const event: TraceEvent = {
-      event_id: uuidv4(),
+    await this.sendEvent(createTraceEvent(
       event_type,
-      trace_id: context.trace_id,
-      timestamp: new Date().toISOString(),
-      source: this.config.source,
-      payload: {
+      context.trace_id,
+      this.config.source,
+      {
         result,
         error: typeof result === 'string' && status === 'failed' ? result : undefined,
       },
-    };
-
-    await this.sendEvent(event);
+    ));
     this.activeTraces.delete(context.trace_id);
   }
 
@@ -433,6 +418,17 @@ export class TraceFlowSDK {
   async failTrace(error: string | Error): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : error;
     await this.finishTrace('failed', errorMessage);
+  }
+
+  /**
+   * Check connectivity to the TraceFlow backend
+   * Only works with HTTP transport
+   */
+  async healthCheck(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+    if (!this.transport.healthCheck) {
+      return { ok: false, latencyMs: 0, error: 'Health check only supported with HTTP transport' };
+    }
+    return this.transport.healthCheck();
   }
 
   /**
@@ -448,7 +444,7 @@ export class TraceFlowSDK {
    * Shutdown SDK gracefully
    */
   async shutdown(): Promise<void> {
-    console.log('[TraceFlow] Shutting down SDK...');
+    this.logger.info('Shutting down SDK...');
 
     // Close all active traces and steps
     await this.closeAllActiveTracesAndSteps();
@@ -458,7 +454,7 @@ export class TraceFlowSDK {
       try {
         await handler();
       } catch (error: any) {
-        console.error('[TraceFlow] Shutdown handler error:', error.message);
+        this.logger.error('Shutdown handler error:', error.message);
       }
     }
 
@@ -467,7 +463,7 @@ export class TraceFlowSDK {
       await this.transport.shutdown();
     }
 
-    console.log('[TraceFlow] SDK shutdown complete');
+    this.logger.info('SDK shutdown complete');
   }
 
   /**
@@ -485,12 +481,12 @@ export class TraceFlowSDK {
     const targetTraceId = traceId || this.contextManager.getCurrentTraceId();
 
     if (!targetTraceId) {
-      console.warn('[TraceFlow] No trace ID for heartbeat');
+      this.logger.warn('No trace ID for heartbeat');
       return;
     }
 
     if (this.config.transport !== 'http') {
-      console.warn('[TraceFlow] heartbeat() only supported with HTTP transport');
+      this.logger.warn('heartbeat() only supported with HTTP transport');
       return;
     }
 
@@ -502,10 +498,10 @@ export class TraceFlowSDK {
           headers: this.getAuthHeaders(),
         }
       );
-      console.log(`[TraceFlow] Heartbeat sent for trace: ${targetTraceId}`);
+      this.logger.debug(`Heartbeat sent for trace: ${targetTraceId}`);
     } catch (error: any) {
       if (!this.config.silentErrors) {
-        console.error('[TraceFlow] Heartbeat error:', error.message);
+        this.logger.error('Heartbeat error:', error.message);
       }
     }
   }
@@ -518,7 +514,8 @@ export class TraceFlowSDK {
       traceId,
       this.config.source,
       this.sendEvent.bind(this),
-      this.contextManager
+      this.contextManager,
+      this.logger
     );
 
     // Track for cleanup
@@ -564,8 +561,10 @@ export class TraceFlowSDK {
         maxRetries: this.config.maxRetries,
         retryDelay: this.config.retryDelay,
         enableCircuitBreaker: this.config.enableCircuitBreaker,
+        circuitBreakerThreshold: this.config.circuitBreakerThreshold,
+        circuitBreakerTimeout: this.config.circuitBreakerTimeout,
         silentErrors: this.config.silentErrors,
-      });
+      }, this.logger.scope('HTTP'));
     } else if (this.config.transport === 'kafka') {
       if (!this.config.kafka) {
         throw new Error('Kafka transport requires kafka configuration');
@@ -574,7 +573,7 @@ export class TraceFlowSDK {
       return new KafkaTransport({
         ...this.config.kafka,
         silentErrors: this.config.silentErrors,
-      });
+      }, undefined, this.logger.scope('Kafka'));
     } else {
       throw new Error(`Unknown transport: ${this.config.transport}`);
     }
@@ -588,7 +587,7 @@ export class TraceFlowSDK {
       await this.transport.send(event);
     } catch (error: any) {
       if (this.config.silentErrors) {
-        console.error('[TraceFlow] Error sending event (silenced):', error.message);
+        this.logger.error('Error sending event (silenced):', error.message);
       } else {
         throw error;
       }
@@ -601,7 +600,7 @@ export class TraceFlowSDK {
   private registerTraceCleanup(trace_id: string, handle: TraceHandle): void {
     const cleanup = async () => {
       if (this.activeTraces.has(trace_id)) {
-        console.warn(`[TraceFlow] Auto-closing trace ${trace_id} on shutdown`);
+        this.logger.warn(`Auto-closing trace ${trace_id} on shutdown`);
         await handle.fail(new Error('Process terminated'));
         this.activeTraces.delete(trace_id);
       }
@@ -616,7 +615,7 @@ export class TraceFlowSDK {
   private registerStepCleanup(step_id: string, handle: StepHandle): void {
     const cleanup = async () => {
       if (this.activeSteps.has(step_id)) {
-        console.warn(`[TraceFlow] Auto-closing step ${step_id} on shutdown`);
+        this.logger.warn(`Auto-closing step ${step_id} on shutdown`);
         await handle.fail(new Error('Process terminated'));
         this.activeSteps.delete(step_id);
       }
@@ -652,7 +651,7 @@ export class TraceFlowSDK {
     }
 
     const exitHandler = async (signal: string) => {
-      console.log(`[TraceFlow] Received ${signal}, cleaning up...`);
+      this.logger.info(`Received ${signal}, cleaning up...`);
 
       try {
         await Promise.race([
@@ -660,7 +659,7 @@ export class TraceFlowSDK {
           this.timeout(this.config.flushTimeoutMs!),
         ]);
       } catch (error) {
-        console.error('[TraceFlow] Shutdown timeout or error:', error);
+        this.logger.error('Shutdown timeout or error:', error);
       }
 
       process.exit(0);
@@ -672,12 +671,12 @@ export class TraceFlowSDK {
     
     // Best effort on uncaught errors
     process.once('uncaughtException', async (error) => {
-      console.error('[TraceFlow] Uncaught exception:', error);
+      this.logger.error('Uncaught exception:', error);
       await this.closeAllActiveTracesAndSteps().catch(() => {});
     });
 
     process.once('unhandledRejection', async (reason) => {
-      console.error('[TraceFlow] Unhandled rejection:', reason);
+      this.logger.error('Unhandled rejection:', reason);
       await this.closeAllActiveTracesAndSteps().catch(() => {});
     });
 

@@ -9,13 +9,16 @@ Trace your distributed systems with confidence using HTTP or Kafka transport.
 - **📦 Stateless** - No Redis, no databases, pure event streaming
 - **🔀 Transport Agnostic** - Use HTTP REST API or Kafka, same API
 - **🧵 Context-Aware** - Automatic context propagation using AsyncLocalStorage
-- **🔄 Retry Logic** - Built-in exponential backoff and circuit breaker
+- **🔄 Retry Logic** - Built-in exponential backoff and configurable circuit breaker
 - **🛡️ Production-Ready** - Never fails your app, always safe
 - **🎯 Type-Safe** - Full TypeScript support
 - **📊 Ordering Guarantees** - Kafka partitioning by trace_id
 - **🌊 Async-First** - Works seamlessly across async boundaries
 - **☸️ Kubernetes-Ready** - Graceful shutdown and auto-cleanup
 - **📝 Event-Based** - Append-only event model
+- **🔌 Framework Middleware** - Built-in Express and Fastify middleware for automatic request tracing
+- **📨 Queue Integration** - Trace context propagation across job queues (BullMQ, etc.)
+- **🏥 Health Check** - Built-in connectivity verification
 
 ## 🏗️ Architecture
 
@@ -320,11 +323,18 @@ interface TraceFlowSDKConfig {
   maxRetries?: number; // Default: 3
   retryDelay?: number; // Default: 1000ms
   enableCircuitBreaker?: boolean; // Default: true
-  
+  circuitBreakerThreshold?: number; // Default: 5 (failures before opening)
+  circuitBreakerTimeout?: number; // Default: 60000ms (time before half-open)
+
   // Behavior
   autoFlushOnExit?: boolean; // Default: true
   flushTimeoutMs?: number; // Default: 5000ms
   silentErrors?: boolean; // Default: true
+
+  // Logging
+  enableLogging?: boolean; // Default: true
+  logLevel?: 'debug' | 'info' | 'warn' | 'error'; // Default: 'info'
+  logger?: { debug, info, warn, error }; // Custom logger
 }
 ```
 
@@ -449,6 +459,10 @@ Flush all pending events.
 await sdk.flush();
 ```
 
+#### `healthCheck(): Promise<{ ok, latencyMs, error? }>`
+
+Check connectivity to the TraceFlow backend (HTTP transport only).
+
 #### `shutdown(): Promise<void>`
 
 Gracefully shutdown SDK.
@@ -479,48 +493,64 @@ await step.log(message, options);
 
 See `examples/microservice-example.ts` for a complete example with Express.
 
-### Middleware Pattern
+### Express Middleware (Built-in)
 
 ```typescript
-// Initialize once
-const traceflow = new TraceFlowSDK({
+import { TraceFlowSDK, createExpressMiddleware } from '@dev.smartpricing/traceflow-sdk';
+
+const sdk = new TraceFlowSDK({
   transport: 'http',
-  source: process.env.SERVICE_NAME,
+  source: 'my-api',
   endpoint: process.env.TRACEFLOW_ENDPOINT,
 });
 
-// Middleware
-app.use(async (req, res, next) => {
-  // Use trace ID from header if present, otherwise create new
-  const traceId = req.headers['x-trace-id'];
-  
-  const trace = traceId
-    ? await traceflow.getTrace(traceId)
-    : await traceflow.startTrace({
-        trace_type: 'http_request',
-        title: `${req.method} ${req.path}`,
-      });
+// One-liner: auto-traces all requests, extracts/propagates X-Trace-Id
+app.use(createExpressMiddleware(sdk, {
+  ignorePaths: ['/health', '/metrics'],
+}));
 
-  req.trace = trace;
-  res.setHeader('x-trace-id', trace.trace_id);
-  
-  next();
-});
-
-// Routes
+// Access trace in route handlers via req.traceflowTrace
 app.get('/users/:id', async (req, res) => {
-  try {
-    const step = await sdk.startStep({ name: 'Get User' });
-    const user = await getUserFromDB(req.params.id);
-    await step.finish({ output: user });
-    
-    await req.trace.finish({ result: user });
-    res.json(user);
-  } catch (error) {
-    await req.trace.fail(error);
-    res.status(500).json({ error: error.message });
-  }
+  const step = await req.traceflowTrace.startStep({ name: 'Get User' });
+  const user = await getUserFromDB(req.params.id);
+  await step.finish({ output: user });
+  res.json(user);
 });
+```
+
+### Fastify Plugin (Built-in)
+
+```typescript
+import { TraceFlowSDK, traceflowFastifyPlugin } from '@dev.smartpricing/traceflow-sdk';
+
+const sdk = new TraceFlowSDK({ /* config */ });
+fastify.register(traceflowFastifyPlugin, { sdk, ignorePaths: ['/health'] });
+```
+
+### Queue/Job Context Propagation
+
+Propagate trace context across job queues (BullMQ, etc.):
+
+```typescript
+import { serializeTraceContext, createTracedProcessor } from '@dev.smartpricing/traceflow-sdk';
+
+// Producer: embed trace context in job data
+const ctx = serializeTraceContext(sdk);
+await queue.add('process', { ...jobData, _traceContext: ctx });
+
+// Consumer: auto-restore context with traced processor
+const worker = new Worker('my-queue', createTracedProcessor(sdk, async (job, trace) => {
+  await trace?.log('Processing job...');
+  return { processed: true };
+}));
+```
+
+### Health Check
+
+```typescript
+const result = await sdk.healthCheck();
+// { ok: true, latencyMs: 12 }
+// { ok: false, latencyMs: 5002, error: 'ECONNREFUSED' }
 ```
 
 ## 🐳 Kubernetes Deployment

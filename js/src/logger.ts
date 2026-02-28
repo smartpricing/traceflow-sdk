@@ -12,6 +12,13 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   error: 3,
 };
 
+export interface LoggerLike {
+  debug(message: string, ...args: any[]): void;
+  info(message: string, ...args: any[]): void;
+  warn(message: string, ...args: any[]): void;
+  error(message: string, ...args: any[]): void;
+}
+
 export interface LoggerConfig {
   enabled?: boolean;
   minLevel?: LogLevel;

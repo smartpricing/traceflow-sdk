@@ -100,6 +100,8 @@ export interface TraceFlowSDKConfig {
   maxRetries?: number;
   retryDelay?: number;
   enableCircuitBreaker?: boolean;
+  circuitBreakerThreshold?: number; // Number of failures before opening circuit (default: 5)
+  circuitBreakerTimeout?: number; // Milliseconds before circuit half-opens (default: 60000)
   
   // Behavior options
   autoFlushOnExit?: boolean;
@@ -175,21 +177,32 @@ export interface LogOptions {
 /**
  * Transport abstraction for sending events
  */
+export interface HealthCheckResult {
+  ok: boolean;
+  latencyMs: number;
+  error?: string;
+}
+
 export interface TraceTransport {
   /**
    * Send a single event
    */
   send(event: TraceEvent): Promise<void>;
-  
+
   /**
    * Flush any pending events
    */
   flush?(): Promise<void>;
-  
+
   /**
    * Shutdown the transport gracefully
    */
   shutdown?(): Promise<void>;
+
+  /**
+   * Check connectivity to the backend
+   */
+  healthCheck?(): Promise<HealthCheckResult>;
 }
 
 // ============================================================================

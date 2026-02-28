@@ -1,8 +1,6 @@
-# Dependencies
-node_modules/
-
-# Build output
-dist/
+# JS/TS SDK
+js/node_modules/
+js/dist/
 
 # Environment files
 .env
@@ -27,7 +25,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Testing
-coverage/
+js/coverage/
 .nyc_output/
 
 # Misc

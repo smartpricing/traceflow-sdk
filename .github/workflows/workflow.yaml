@@ -22,7 +22,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('js/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
@@ -30,11 +30,13 @@ jobs:
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NO_TWOFA_NPM_TOKEN }}" > ~/.npmrc
 
       - name: Install & Build
+        working-directory: js
         run: |
           npm install --force
           npm run build
 
       - name: Conditional version bump & changelog
+        working-directory: js
         run: |
           git config --global user.email "ci@github.com"
           git config --global user.name "GitHub Actions Bot"
@@ -50,6 +52,7 @@ jobs:
           fi
 
       - name: Publish to NPM
+        working-directory: js
         run: npm publish
 
       - name: Merge release branch into develop

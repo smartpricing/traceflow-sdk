@@ -11,9 +11,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class AsyncHttpTransport implements Transport {
@@ -26,7 +26,7 @@ public final class AsyncHttpTransport implements Transport {
     private final boolean silentErrors;
     private final ObjectMapper objectMapper;
     private final RetryExecutor retryExecutor;
-    private final List<CompletableFuture<?>> futures = new CopyOnWriteArrayList<>();
+    private final Queue<CompletableFuture<?>> futures = new ConcurrentLinkedQueue<>();
     private final AtomicInteger eventCount = new AtomicInteger(0);
 
     public AsyncHttpTransport(TraceFlowConfig config) {
@@ -55,6 +55,7 @@ public final class AsyncHttpTransport implements Transport {
                         return null;
                     });
             futures.add(future);
+            future.whenComplete((r, e) -> futures.remove(future));
         } catch (Exception e) {
             if (silentErrors) {
                 log.warn("[TraceFlow Async] Error sending event (silenced): {}", e.getMessage());
@@ -64,8 +65,13 @@ public final class AsyncHttpTransport implements Transport {
         }
     }
 
-    private Void executeRequest(EventRouter.Route route) throws Exception {
-        String json = objectMapper.writeValueAsString(route.payload());
+    private CompletableFuture<Void> executeRequest(EventRouter.Route route) {
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(route.payload());
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(new TraceFlowException("Serialization failed", e));
+        }
 
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(endpoint + route.path()))
@@ -81,12 +87,12 @@ public final class AsyncHttpTransport implements Transport {
             default -> throw new TraceFlowException("Unsupported HTTP method: " + route.method());
         };
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() >= 400) {
-            throw new TraceFlowException("HTTP " + response.statusCode() + ": " + response.body());
-        }
-        return null;
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenAccept(response -> {
+                    if (response.statusCode() >= 400) {
+                        throw new TraceFlowException("HTTP " + response.statusCode() + ": " + response.body());
+                    }
+                });
     }
 
     @Override

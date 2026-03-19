@@ -51,7 +51,7 @@ public final class EventRouter {
             case TRACE_FINISHED -> TraceStatus.SUCCESS;
             case TRACE_FAILED -> TraceStatus.FAILED;
             case TRACE_CANCELLED -> TraceStatus.CANCELLED;
-            default -> TraceStatus.RUNNING;
+            default -> throw new IllegalArgumentException("Unexpected event type for updateTrace: " + event.eventType());
         };
 
         Map<String, Object> payload = filterNulls(Map.ofEntries(

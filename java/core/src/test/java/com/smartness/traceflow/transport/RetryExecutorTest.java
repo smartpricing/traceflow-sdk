@@ -3,6 +3,7 @@ package com.smartness.traceflow.transport;
 import com.smartness.traceflow.exception.TraceFlowException;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -44,7 +45,7 @@ class RetryExecutorTest {
     @Test
     void asyncSuccessOnFirstAttempt() throws Exception {
         RetryExecutor executor = new RetryExecutor(3, 10);
-        String result = executor.executeAsync(() -> "async-ok").get();
+        String result = executor.executeAsync(() -> CompletableFuture.completedFuture("async-ok")).get();
         assertEquals("async-ok", result);
     }
 
@@ -55,9 +56,9 @@ class RetryExecutorTest {
 
         String result = executor.<String>executeAsync(() -> {
             if (attempts.incrementAndGet() < 3) {
-                throw new RuntimeException("fail");
+                return CompletableFuture.failedFuture(new RuntimeException("fail"));
             }
-            return "async-recovered";
+            return CompletableFuture.completedFuture("async-recovered");
         }).get();
 
         assertEquals("async-recovered", result);

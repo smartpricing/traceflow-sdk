@@ -3,6 +3,7 @@ package com.smartness.traceflow.handles;
 import com.smartness.traceflow.dto.TraceEvent;
 import com.smartness.traceflow.enums.LogLevel;
 import com.smartness.traceflow.enums.TraceEventType;
+import com.smartness.traceflow.exception.TraceFlowException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,11 +47,7 @@ public class StepHandle {
     }
 
     public void finish(Object output, Map<String, Object> metadata) {
-        if (closed) {
-            log.warn("[TraceFlow] Step {} already closed", stepId);
-            return;
-        }
-        closed = true;
+        if (!markClosed()) return;
 
         Map<String, Object> payload = new HashMap<>();
         if (output != null) payload.put("output", output);
@@ -68,11 +65,7 @@ public class StepHandle {
     }
 
     public void fail(String error) {
-        if (closed) {
-            log.warn("[TraceFlow] Step {} already closed", stepId);
-            return;
-        }
-        closed = true;
+        if (!markClosed()) return;
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("error", error);
@@ -89,15 +82,11 @@ public class StepHandle {
     }
 
     public void fail(Throwable error) {
-        if (closed) {
-            log.warn("[TraceFlow] Step {} already closed", stepId);
-            return;
-        }
-        closed = true;
+        if (!markClosed()) return;
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("error", error.getMessage());
-        payload.put("stack", getStackTraceString(error));
+        payload.put("error", error.getMessage() != null ? error.getMessage() : error.getClass().getName());
+        payload.put("stack", TraceFlowException.stackTraceString(error));
 
         sendEvent.accept(new TraceEvent(
                 UUID.randomUUID().toString(),
@@ -136,11 +125,12 @@ public class StepHandle {
         ));
     }
 
-    private static String getStackTraceString(Throwable t) {
-        StringBuilder sb = new StringBuilder();
-        for (StackTraceElement el : t.getStackTrace()) {
-            sb.append(el.toString()).append("\n");
+    private boolean markClosed() {
+        if (closed) {
+            log.warn("[TraceFlow] Step {} already closed", stepId);
+            return false;
         }
-        return sb.toString();
+        closed = true;
+        return true;
     }
 }

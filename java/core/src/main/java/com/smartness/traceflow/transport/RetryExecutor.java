@@ -6,6 +6,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public final class RetryExecutor {
 
@@ -42,28 +45,24 @@ public final class RetryExecutor {
         }
     }
 
-    public <T> CompletableFuture<T> executeAsync(Callable<T> action) {
-        return executeAsync(action, 0);
+    public <T> CompletableFuture<T> executeAsync(Supplier<CompletableFuture<T>> asyncAction) {
+        return executeAsync(asyncAction, 0);
     }
 
-    private <T> CompletableFuture<T> executeAsync(Callable<T> action, int attempt) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                return action.call();
-            } catch (Exception e) {
-                throw new TraceFlowException("Request failed", e);
-            }
-        }).exceptionallyCompose(ex -> {
+    private <T> CompletableFuture<T> executeAsync(Supplier<CompletableFuture<T>> asyncAction, int attempt) {
+        CompletableFuture<T> stage;
+        try {
+            stage = asyncAction.get();
+        } catch (Exception e) {
+            stage = CompletableFuture.failedFuture(new TraceFlowException("Request failed", e));
+        }
+        return stage.exceptionallyCompose(ex -> {
             if (attempt < maxRetries) {
                 long delay = retryDelayMs * (1L << attempt);
                 log.debug("Async retry attempt {} after {}ms: {}", attempt + 1, delay, ex.getMessage());
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    return CompletableFuture.failedFuture(new TraceFlowException("Retry interrupted", ie));
-                }
-                return executeAsync(action, attempt + 1);
+                Executor delayed = CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS);
+                return CompletableFuture.supplyAsync(() -> null, delayed)
+                        .thenCompose(__ -> executeAsync(asyncAction, attempt + 1));
             }
             return CompletableFuture.failedFuture(
                     new TraceFlowException("Failed after " + maxRetries + " retries", ex));

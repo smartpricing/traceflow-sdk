@@ -89,4 +89,39 @@ class StepHandleTest {
 
         assertEquals("INFO", events.get(0).payload().get("level"));
     }
+
+    @Test
+    void isClosedReturnsFalseInitially() {
+        assertFalse(handle.isClosed());
+    }
+
+    @Test
+    void isClosedReturnsTrueAfterFinish() {
+        handle.finish();
+        assertTrue(handle.isClosed());
+    }
+
+    @Test
+    void isClosedReturnsTrueAfterFail() {
+        handle.fail("error");
+        assertTrue(handle.isClosed());
+    }
+
+    @Test
+    void closeAutoFailsIfNotClosed() {
+        handle.close();
+
+        assertTrue(handle.isClosed());
+        assertEquals(1, events.size());
+        assertEquals(TraceEventType.STEP_FAILED, events.get(0).eventType());
+        assertEquals("Step not explicitly closed", events.get(0).payload().get("error"));
+    }
+
+    @Test
+    void closeIsNoopIfAlreadyClosed() {
+        handle.finish();
+        handle.close(); // should not send another event
+
+        assertEquals(1, events.size());
+    }
 }

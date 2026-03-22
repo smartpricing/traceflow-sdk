@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-public class StepHandle {
+public class StepHandle implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(StepHandle.class);
 
@@ -36,6 +36,17 @@ public class StepHandle {
 
     public String getTraceId() {
         return traceId;
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    @Override
+    public void close() {
+        if (!closed) {
+            fail("Step not explicitly closed");
+        }
     }
 
     public void finish() {

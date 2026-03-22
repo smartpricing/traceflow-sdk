@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 public class TraceFlowClient {
@@ -24,6 +25,7 @@ public class TraceFlowClient {
 
     private final TraceFlowConfig config;
     private final Transport transport;
+    private final Map<String, TraceHandle> activeTraces = new ConcurrentHashMap<>();
 
     public TraceFlowClient(TraceFlowConfig config) {
         this.config = config;
@@ -70,7 +72,16 @@ public class TraceFlowClient {
         sendEvent(event);
         TraceFlowContext.set(traceId);
 
-        return new TraceHandle(traceId, config.source(), this::sendEvent);
+        String finalTraceId = traceId;
+        TraceHandle handle = new TraceHandle(
+                traceId,
+                config.source(),
+                this::sendEvent,
+                true,
+                () -> activeTraces.remove(finalTraceId)
+        );
+        activeTraces.put(traceId, handle);
+        return handle;
     }
 
     public TraceHandle getCurrentTrace() {
@@ -131,7 +142,19 @@ public class TraceFlowClient {
 
     public void shutdown() {
         log.debug("[TraceFlow] Shutting down SDK...");
+        closeAllActive();
         transport.shutdown();
+    }
+
+    private void closeAllActive() {
+        for (TraceHandle trace : activeTraces.values()) {
+            if (!trace.isClosed()) {
+                try {
+                    trace.fail("Process shutting down");
+                } catch (Exception ignored) {}
+            }
+        }
+        activeTraces.clear();
     }
 
     private void sendEvent(TraceEvent event) {

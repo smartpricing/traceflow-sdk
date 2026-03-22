@@ -8,28 +8,51 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
-public class TraceHandle {
+public class TraceHandle implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(TraceHandle.class);
 
     private final String traceId;
     private final String source;
     private final Consumer<TraceEvent> sendEvent;
+    private final boolean ownsLifecycle;
+    private final Runnable onClose;
+    private final List<StepHandle> steps = new ArrayList<>();
     private boolean closed = false;
 
     public TraceHandle(String traceId, String source, Consumer<TraceEvent> sendEvent) {
+        this(traceId, source, sendEvent, false, null);
+    }
+
+    public TraceHandle(String traceId, String source, Consumer<TraceEvent> sendEvent, boolean ownsLifecycle, Runnable onClose) {
         this.traceId = traceId;
         this.source = source;
         this.sendEvent = sendEvent;
+        this.ownsLifecycle = ownsLifecycle;
+        this.onClose = onClose;
     }
 
     public String getTraceId() {
         return traceId;
+    }
+
+    public boolean isClosed() {
+        return closed;
+    }
+
+    @Override
+    public void close() {
+        if (ownsLifecycle && !closed) {
+            fail("Trace not explicitly closed");
+        }
     }
 
     public void finish() {
@@ -41,7 +64,14 @@ public class TraceHandle {
     }
 
     public void finish(Map<String, Object> result, Map<String, Object> metadata) {
-        if (!markClosed()) return;
+        if (closed) {
+            log.warn("[TraceFlow] Trace {} already closed", traceId);
+            return;
+        }
+
+        closeOrphanedSteps("Parent trace finished");
+        closed = true;
+        notifyClosed();
 
         Map<String, Object> payload = new HashMap<>();
         if (result != null) payload.put("result", result);
@@ -58,7 +88,14 @@ public class TraceHandle {
     }
 
     public void fail(String error) {
-        if (!markClosed()) return;
+        if (closed) {
+            log.warn("[TraceFlow] Trace {} already closed", traceId);
+            return;
+        }
+
+        closeOrphanedSteps(error);
+        closed = true;
+        notifyClosed();
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("error", error);
@@ -74,10 +111,19 @@ public class TraceHandle {
     }
 
     public void fail(Throwable error) {
-        if (!markClosed()) return;
+        if (closed) {
+            log.warn("[TraceFlow] Trace {} already closed", traceId);
+            return;
+        }
+
+        String errorMessage = error.getMessage() != null ? error.getMessage() : error.getClass().getName();
+
+        closeOrphanedSteps(errorMessage);
+        closed = true;
+        notifyClosed();
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("error", error.getMessage() != null ? error.getMessage() : error.getClass().getName());
+        payload.put("error", errorMessage);
         payload.put("stack", TraceFlowException.stackTraceString(error));
 
         sendEvent.accept(new TraceEvent(
@@ -91,7 +137,14 @@ public class TraceHandle {
     }
 
     public void cancel() {
-        if (!markClosed()) return;
+        if (closed) {
+            log.warn("[TraceFlow] Trace {} already closed", traceId);
+            return;
+        }
+
+        closeOrphanedSteps("Parent trace cancelled");
+        closed = true;
+        notifyClosed();
 
         sendEvent.accept(new TraceEvent(
                 UUID.randomUUID().toString(),
@@ -130,7 +183,28 @@ public class TraceHandle {
                 stepId
         ));
 
-        return new StepHandle(stepId, traceId, source, sendEvent);
+        StepHandle step = new StepHandle(stepId, traceId, source, sendEvent);
+        steps.add(step);
+        return step;
+    }
+
+    /**
+     * Execute a callback within a step, guaranteeing the step is closed.
+     */
+    public <T> T withStep(Function<StepHandle, T> fn, String name, String stepType, Object input, Map<String, Object> metadata) {
+        StepHandle step = startStep(name, stepType, input, metadata);
+        try {
+            T result = fn.apply(step);
+            step.finish(result);
+            return result;
+        } catch (Throwable e) {
+            step.fail(e);
+            throw e;
+        }
+    }
+
+    public <T> T withStep(Function<StepHandle, T> fn, String name) {
+        return withStep(fn, name, null, null, null);
     }
 
     public void log(String message) {
@@ -158,12 +232,20 @@ public class TraceHandle {
         ));
     }
 
-    private boolean markClosed() {
-        if (closed) {
-            log.warn("[TraceFlow] Trace {} already closed", traceId);
-            return false;
+    private void notifyClosed() {
+        if (onClose != null) {
+            onClose.run();
         }
-        closed = true;
-        return true;
+    }
+
+    private void closeOrphanedSteps(String reason) {
+        for (StepHandle step : steps) {
+            if (!step.isClosed()) {
+                try {
+                    step.fail(reason);
+                } catch (Exception ignored) {}
+            }
+        }
+        steps.clear();
     }
 }

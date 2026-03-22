@@ -99,4 +99,36 @@ class TraceFlowClientTest {
         assertNotNull(defaultClient);
         defaultClient.shutdown();
     }
+
+    @Test
+    void shutdownClosesUnclosedTraces() {
+        TraceHandle trace = client.startTrace();
+        assertFalse(trace.isClosed());
+
+        client.shutdown();
+
+        assertTrue(trace.isClosed());
+    }
+
+    @Test
+    void shutdownDoesNotDoubleCloseExplicitlyClosedTraces() {
+        TraceHandle trace = client.startTrace();
+        trace.finish();
+        assertTrue(trace.isClosed());
+
+        // Should not throw or produce extra events
+        client.shutdown();
+
+        assertTrue(trace.isClosed());
+    }
+
+    @Test
+    void explicitlyClosedTraceRemovedFromRegistry() {
+        TraceHandle trace = client.startTrace();
+        trace.finish(); // triggers onClose → removed from activeTraces
+
+        // shutdown should have nothing to close
+        client.shutdown(); // no exception, no double-close
+        assertTrue(trace.isClosed());
+    }
 }

@@ -27,6 +27,9 @@ class TraceFlowSDK
 
     private float $timeout;
 
+    /** @var array<string, TraceHandle> */
+    private array $activeTraces = [];
+
     public function __construct(array $config)
     {
         $this->source = $config['source'];
@@ -91,11 +94,19 @@ class TraceFlowSDK
         $this->sendEvent($event);
         TraceFlowContext::set($traceId);
 
-        return new TraceHandle(
+        $handle = new TraceHandle(
             traceId: $traceId,
             source: $this->source,
             sendEvent: $this->sendEvent(...),
+            ownsLifecycle: true,
+            onClose: function () use ($traceId) {
+                unset($this->activeTraces[$traceId]);
+            },
         );
+
+        $this->activeTraces[$traceId] = $handle;
+
+        return $handle;
     }
 
     /**
@@ -229,11 +240,29 @@ class TraceFlowSDK
     }
 
     /**
-     * Shutdown SDK
+     * Shutdown SDK — close all active handles, then flush transport.
      */
     public function shutdown(): void
     {
+        $this->closeAllActive();
         $this->transport->shutdown();
+    }
+
+    /**
+     * Close all active traces that were not explicitly closed.
+     * Each trace cascades to close its own orphaned steps via closeOrphanedSteps().
+     */
+    private function closeAllActive(): void
+    {
+        foreach ($this->activeTraces as $trace) {
+            if (! $trace->isClosed()) {
+                try {
+                    $trace->fail('Process shutting down');
+                } catch (\Throwable) {}
+            }
+        }
+
+        $this->activeTraces = [];
     }
 
     private function sendEvent(TraceEvent $event): void

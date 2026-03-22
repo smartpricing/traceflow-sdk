@@ -29,13 +29,16 @@ export class TraceHandleImpl implements TraceHandle {
   private contextManager: ContextManager;
   private logger: LoggerLike;
   private closed: boolean = false;
+  private steps: StepHandleImpl[] = [];
+  private onClose?: () => void;
 
   constructor(
     trace_id: string,
     source: string,
     sendEvent: (event: TraceEvent) => Promise<void>,
     contextManager: ContextManager,
-    logger?: LoggerLike
+    logger?: LoggerLike,
+    onClose?: () => void,
   ) {
     this.trace_id = trace_id;
     this.source = source;
@@ -43,6 +46,11 @@ export class TraceHandleImpl implements TraceHandle {
     this.contextManager = contextManager;
     const noop = () => {};
     this.logger = logger || { debug: noop, info: noop, warn: noop, error: noop };
+    this.onClose = onClose;
+  }
+
+  isClosed(): boolean {
+    return this.closed;
   }
 
   /**
@@ -54,7 +62,10 @@ export class TraceHandleImpl implements TraceHandle {
       return;
     }
 
+    await this.closeOrphanedSteps('Parent trace finished');
     this.closed = true;
+    this.onClose?.();
+
     await this.sendEvent(createTraceEvent(
       TraceEventType.TRACE_FINISHED,
       this.trace_id,
@@ -72,9 +83,12 @@ export class TraceHandleImpl implements TraceHandle {
       return;
     }
 
-    this.closed = true;
     const errorMessage = error instanceof Error ? error.message : error;
     const errorStack = error instanceof Error ? error.stack : undefined;
+
+    await this.closeOrphanedSteps(errorMessage);
+    this.closed = true;
+    this.onClose?.();
 
     await this.sendEvent(createTraceEvent(
       TraceEventType.TRACE_FAILED,
@@ -93,7 +107,10 @@ export class TraceHandleImpl implements TraceHandle {
       return;
     }
 
+    await this.closeOrphanedSteps('Parent trace cancelled');
     this.closed = true;
+    this.onClose?.();
+
     await this.sendEvent(createTraceEvent(
       TraceEventType.TRACE_CANCELLED,
       this.trace_id,
@@ -124,14 +141,32 @@ export class TraceHandleImpl implements TraceHandle {
     // Update context with step_id
     this.contextManager.updateContext({ step_id });
 
-    return new StepHandleImpl(
+    const step = new StepHandleImpl(
       step_id,
       this.trace_id,
       this.source,
       this.sendEvent,
       this.contextManager,
-      this.logger
+      this.logger,
     );
+
+    this.steps.push(step);
+    return step;
+  }
+
+  /**
+   * Execute a callback within a step, guaranteeing the step is closed.
+   */
+  async withStep<T>(fn: (step: StepHandle) => Promise<T>, options?: StartStepOptions): Promise<T> {
+    const step = await this.startStep(options);
+    try {
+      const result = await fn(step);
+      await step.finish({ output: result });
+      return result;
+    } catch (e) {
+      await step.fail(e as Error);
+      throw e;
+    }
   }
 
   /**
@@ -151,6 +186,19 @@ export class TraceHandleImpl implements TraceHandle {
       options?.step_id,
     ));
   }
+
+  private async closeOrphanedSteps(reason: string): Promise<void> {
+    for (const step of this.steps) {
+      if (!step.isClosed()) {
+        try {
+          await step.fail(reason);
+        } catch {
+          // ignore
+        }
+      }
+    }
+    this.steps = [];
+  }
 }
 
 /**
@@ -164,6 +212,7 @@ export class StepHandleImpl implements StepHandle {
   private contextManager: ContextManager;
   private logger: LoggerLike;
   private closed: boolean = false;
+  private onClose?: () => void;
 
   constructor(
     step_id: string,
@@ -171,7 +220,8 @@ export class StepHandleImpl implements StepHandle {
     source: string,
     sendEvent: (event: TraceEvent) => Promise<void>,
     contextManager: ContextManager,
-    logger?: LoggerLike
+    logger?: LoggerLike,
+    onClose?: () => void,
   ) {
     this.step_id = step_id;
     this.trace_id = trace_id;
@@ -180,6 +230,11 @@ export class StepHandleImpl implements StepHandle {
     this.contextManager = contextManager;
     const noop = () => {};
     this.logger = logger || { debug: noop, info: noop, warn: noop, error: noop };
+    this.onClose = onClose;
+  }
+
+  isClosed(): boolean {
+    return this.closed;
   }
 
   /**
@@ -192,6 +247,8 @@ export class StepHandleImpl implements StepHandle {
     }
 
     this.closed = true;
+    this.onClose?.();
+
     await this.sendEvent(createTraceEvent(
       TraceEventType.STEP_FINISHED,
       this.trace_id,
@@ -214,6 +271,8 @@ export class StepHandleImpl implements StepHandle {
     }
 
     this.closed = true;
+    this.onClose?.();
+
     const errorMessage = error instanceof Error ? error.message : error;
     const errorStack = error instanceof Error ? error.stack : undefined;
 

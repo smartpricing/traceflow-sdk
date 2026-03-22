@@ -227,10 +227,12 @@ export interface TraceContext {
  */
 export interface TraceHandle {
   trace_id: string;
+  isClosed(): boolean;
   finish(options?: FinishTraceOptions): Promise<void>;
   fail(error: string | Error): Promise<void>;
   cancel(): Promise<void>;
   startStep(options?: StartStepOptions): Promise<StepHandle>;
+  withStep<T>(fn: (step: StepHandle) => Promise<T>, options?: StartStepOptions): Promise<T>;
   log(message: string, options?: LogOptions): Promise<void>;
 }
 
@@ -240,6 +242,7 @@ export interface TraceHandle {
 export interface StepHandle {
   step_id: string;
   trace_id: string;
+  isClosed(): boolean;
   finish(options?: FinishStepOptions): Promise<void>;
   fail(error: string | Error): Promise<void>;
   log(message: string, options?: LogOptions): Promise<void>;

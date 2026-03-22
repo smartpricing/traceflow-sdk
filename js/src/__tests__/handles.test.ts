@@ -98,6 +98,127 @@ describe('TraceHandleImpl', () => {
     const event: TraceEvent = sendEvent.mock.calls[0][0];
     expect(event.payload.level).toBe('ERROR');
   });
+
+  it('isClosed returns false initially', () => {
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager);
+    expect(handle.isClosed()).toBe(false);
+  });
+
+  it('isClosed returns true after finish', async () => {
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager);
+    await handle.finish();
+    expect(handle.isClosed()).toBe(true);
+  });
+
+  it('isClosed returns true after fail', async () => {
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager);
+    await handle.fail('err');
+    expect(handle.isClosed()).toBe(true);
+  });
+
+  it('isClosed returns true after cancel', async () => {
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager);
+    await handle.cancel();
+    expect(handle.isClosed()).toBe(true);
+  });
+
+  it('should close orphaned steps when trace finishes', async () => {
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager);
+
+    await contextManager.runWithContext({ trace_id: 'trace-1' }, async () => {
+      const step = await handle.startStep({ name: 'orphan' });
+      expect(step.isClosed()).toBe(false);
+
+      await handle.finish();
+
+      expect(step.isClosed()).toBe(true);
+      const stepFailed = sendEvent.mock.calls.filter(
+        ([e]: [TraceEvent]) => e.event_type === TraceEventType.STEP_FAILED
+      );
+      expect(stepFailed).toHaveLength(1);
+    });
+  });
+
+  it('should close orphaned steps when trace fails', async () => {
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager);
+
+    await contextManager.runWithContext({ trace_id: 'trace-1' }, async () => {
+      const step = await handle.startStep({ name: 'orphan' });
+      await handle.fail('boom');
+      expect(step.isClosed()).toBe(true);
+    });
+  });
+
+  it('should not close explicitly finished steps again on trace finish', async () => {
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager);
+
+    await contextManager.runWithContext({ trace_id: 'trace-1' }, async () => {
+      const step = await handle.startStep({ name: 'explicit' });
+      await step.finish({ output: 'done' });
+      sendEvent.mockClear();
+
+      await handle.finish();
+
+      const stepFailed = sendEvent.mock.calls.filter(
+        ([e]: [TraceEvent]) => e.event_type === TraceEventType.STEP_FAILED
+      );
+      expect(stepFailed).toHaveLength(0);
+    });
+  });
+
+  it('onClose callback is called on finish', async () => {
+    const onClose = vi.fn();
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager, undefined, onClose);
+    await handle.finish();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('onClose callback is called on fail', async () => {
+    const onClose = vi.fn();
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager, undefined, onClose);
+    await handle.fail('err');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('onClose callback is not called twice if already closed', async () => {
+    const onClose = vi.fn();
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager, undefined, onClose);
+    await handle.finish();
+    await handle.finish();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('withStep finishes step on success', async () => {
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager);
+
+    await contextManager.runWithContext({ trace_id: 'trace-1' }, async () => {
+      const result = await handle.withStep(async (step) => {
+        expect(step.isClosed()).toBe(false);
+        return 'result-value';
+      }, { name: 'my-step' });
+
+      expect(result).toBe('result-value');
+      const finished = sendEvent.mock.calls.filter(
+        ([e]: [TraceEvent]) => e.event_type === TraceEventType.STEP_FINISHED
+      );
+      expect(finished).toHaveLength(1);
+    });
+  });
+
+  it('withStep fails step on exception and rethrows', async () => {
+    const handle = new TraceHandleImpl('trace-1', 'test-svc', sendEvent, contextManager);
+
+    await contextManager.runWithContext({ trace_id: 'trace-1' }, async () => {
+      await expect(
+        handle.withStep(async () => { throw new Error('step-boom'); }, { name: 'failing' })
+      ).rejects.toThrow('step-boom');
+
+      const failed = sendEvent.mock.calls.filter(
+        ([e]: [TraceEvent]) => e.event_type === TraceEventType.STEP_FAILED
+      );
+      expect(failed).toHaveLength(1);
+    });
+  });
 });
 
 describe('StepHandleImpl', () => {
@@ -164,5 +285,22 @@ describe('StepHandleImpl', () => {
       await handle.finish();
       expect(contextManager.getCurrentStepId()).toBeUndefined();
     });
+  });
+
+  it('isClosed returns false initially', () => {
+    const handle = new StepHandleImpl('step-1', 'trace-1', 'test-svc', sendEvent, contextManager);
+    expect(handle.isClosed()).toBe(false);
+  });
+
+  it('isClosed returns true after finish', async () => {
+    const handle = new StepHandleImpl('step-1', 'trace-1', 'test-svc', sendEvent, contextManager);
+    await handle.finish();
+    expect(handle.isClosed()).toBe(true);
+  });
+
+  it('isClosed returns true after fail', async () => {
+    const handle = new StepHandleImpl('step-1', 'trace-1', 'test-svc', sendEvent, contextManager);
+    await handle.fail('err');
+    expect(handle.isClosed()).toBe(true);
   });
 });

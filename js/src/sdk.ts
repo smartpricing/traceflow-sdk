@@ -57,9 +57,7 @@ export class TraceFlowSDK {
   private transport: TraceTransport;
   private contextManager: ContextManager;
   private logger: Logger;
-  private activeTraces: Set<string> = new Set();
-  private activeSteps: Set<string> = new Set();
-  private shutdownHandlers: Array<() => Promise<void>> = [];
+  private activeTraces: Map<string, TraceHandle> = new Map();
   private exitHandlerRegistered: boolean = false;
 
   /**
@@ -264,8 +262,8 @@ export class TraceFlowSDK {
       },
     ));
 
-    // Create and return handle
-    return this.createTraceHandle(trace_id);
+    // Create and return handle (owned — tracked for lifecycle management)
+    return this.createTraceHandle(trace_id, true);
   }
 
   /**
@@ -304,17 +302,23 @@ export class TraceFlowSDK {
    */
   async startStep(options?: StartStepOptions): Promise<StepHandle> {
     const context = this.contextManager.getCurrentContext();
-    
+
     if (!context?.trace_id) {
       const error = new Error('No active trace context. Start a trace first or use runWithTrace()');
       if (!this.config.silentErrors) {
         throw error;
       }
       this.logger.warn(error.message);
-      // Return dummy handle
       return this.createDummyStepHandle();
     }
 
+    // Delegate to the active trace handle so the step is tracked for orphan closure
+    const activeTrace = this.activeTraces.get(context.trace_id);
+    if (activeTrace) {
+      return activeTrace.startStep(options);
+    }
+
+    // Fallback for traces not owned by this SDK instance (e.g. via getTrace())
     const step_id = options?.step_id || uuidv4();
 
     await this.sendEvent(createTraceEvent(
@@ -330,25 +334,16 @@ export class TraceFlowSDK {
       step_id,
     ));
 
-    // Track active step
-    this.activeSteps.add(step_id);
-
-    // Update context
     this.contextManager.updateContext({ step_id });
 
-    const handle = new StepHandleImpl(
+    return new StepHandleImpl(
       step_id,
       context.trace_id,
       this.config.source,
       this.sendEvent.bind(this),
       this.contextManager,
-      this.logger
+      this.logger,
     );
-
-    // Auto-close on handle finalization
-    this.registerStepCleanup(step_id, handle);
-
-    return handle;
   }
 
   /**
@@ -409,7 +404,7 @@ export class TraceFlowSDK {
         error: typeof result === 'string' && status === 'failed' ? result : undefined,
       },
     ));
-    this.activeTraces.delete(context.trace_id);
+    this.activeTraces.delete(context.trace_id); // belt-and-suspenders; onClose on handle does this too
   }
 
   /**
@@ -445,24 +440,10 @@ export class TraceFlowSDK {
    */
   async shutdown(): Promise<void> {
     this.logger.info('Shutting down SDK...');
-
-    // Close all active traces and steps
-    await this.closeAllActiveTracesAndSteps();
-
-    // Run shutdown handlers
-    for (const handler of this.shutdownHandlers) {
-      try {
-        await handler();
-      } catch (error: any) {
-        this.logger.error('Shutdown handler error:', error.message);
-      }
-    }
-
-    // Shutdown transport
+    await this.closeAllActive();
     if (this.transport.shutdown) {
       await this.transport.shutdown();
     }
-
     this.logger.info('SDK shutdown complete');
   }
 
@@ -507,20 +488,24 @@ export class TraceFlowSDK {
   }
 
   /**
-   * Create trace handle
+   * Create trace handle. When owned=true the handle is registered in activeTraces
+   * and will self-remove via onClose when explicitly closed.
    */
-  private createTraceHandle(traceId: string): TraceHandle {
+  private createTraceHandle(traceId: string, owned: boolean = false): TraceHandle {
+    const onClose = owned ? () => this.activeTraces.delete(traceId) : undefined;
+
     const handle = new TraceHandleImpl(
       traceId,
       this.config.source,
       this.sendEvent.bind(this),
       this.contextManager,
-      this.logger
+      this.logger,
+      onClose,
     );
 
-    // Track for cleanup
-    this.activeTraces.add(traceId);
-    this.registerTraceCleanup(traceId, handle);
+    if (owned) {
+      this.activeTraces.set(traceId, handle);
+    }
 
     return handle;
   }
@@ -595,51 +580,21 @@ export class TraceFlowSDK {
   }
 
   /**
-   * Register trace cleanup on process exit
+   * Close all active traces that were not explicitly closed.
+   * Each trace cascades to close its own orphaned steps.
    */
-  private registerTraceCleanup(trace_id: string, handle: TraceHandle): void {
-    const cleanup = async () => {
-      if (this.activeTraces.has(trace_id)) {
-        this.logger.warn(`Auto-closing trace ${trace_id} on shutdown`);
-        await handle.fail(new Error('Process terminated'));
-        this.activeTraces.delete(trace_id);
-      }
-    };
-
-    this.shutdownHandlers.push(cleanup);
-  }
-
-  /**
-   * Register step cleanup on process exit
-   */
-  private registerStepCleanup(step_id: string, handle: StepHandle): void {
-    const cleanup = async () => {
-      if (this.activeSteps.has(step_id)) {
-        this.logger.warn(`Auto-closing step ${step_id} on shutdown`);
-        await handle.fail(new Error('Process terminated'));
-        this.activeSteps.delete(step_id);
-      }
-    };
-
-    this.shutdownHandlers.push(cleanup);
-  }
-
-  /**
-   * Close all active traces and steps
-   */
-  private async closeAllActiveTracesAndSteps(): Promise<void> {
-    // Run all shutdown handlers
-    for (const handler of this.shutdownHandlers) {
-      try {
-        await handler();
-      } catch (error) {
-        // Silent errors during shutdown
+  private async closeAllActive(): Promise<void> {
+    for (const [traceId, trace] of this.activeTraces) {
+      if (!trace.isClosed()) {
+        this.logger.warn(`Auto-closing trace ${traceId} on shutdown`);
+        try {
+          await trace.fail(new Error('Process terminated'));
+        } catch {
+          // ignore
+        }
       }
     }
-
     this.activeTraces.clear();
-    this.activeSteps.clear();
-    this.shutdownHandlers = [];
   }
 
   /**
@@ -672,12 +627,12 @@ export class TraceFlowSDK {
     // Best effort on uncaught errors
     process.once('uncaughtException', async (error) => {
       this.logger.error('Uncaught exception:', error);
-      await this.closeAllActiveTracesAndSteps().catch(() => {});
+      await this.closeAllActive().catch(() => {});
     });
 
     process.once('unhandledRejection', async (reason) => {
       this.logger.error('Unhandled rejection:', reason);
-      await this.closeAllActiveTracesAndSteps().catch(() => {});
+      await this.closeAllActive().catch(() => {});
     });
 
     this.exitHandlerRegistered = true;
@@ -690,6 +645,7 @@ export class TraceFlowSDK {
     return {
       step_id: 'dummy',
       trace_id: 'dummy',
+      isClosed: () => true,
       finish: async () => {},
       fail: async () => {},
       log: async () => {},

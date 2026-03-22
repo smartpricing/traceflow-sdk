@@ -211,6 +211,43 @@ describe('TraceFlowSDK', () => {
     });
   });
 
+  describe('shutdown lifecycle', () => {
+    it('should close unclosed traces on shutdown', async () => {
+      const trace = await sdk.startTrace({ title: 'Test' });
+      expect(trace.isClosed()).toBe(false);
+      mockFetch.mockClear();
+
+      await sdk.shutdown();
+
+      expect(trace.isClosed()).toBe(true);
+      // Should have sent TRACE_FAILED for the auto-close
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.status).toBe('FAILED');
+    });
+
+    it('should not double-close explicitly finished traces', async () => {
+      const trace = await sdk.startTrace({ title: 'Test' });
+      await trace.finish();
+      expect(trace.isClosed()).toBe(true);
+      mockFetch.mockClear();
+
+      await sdk.shutdown();
+
+      // No extra events sent
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('explicitly closed trace is removed from registry', async () => {
+      const trace = await sdk.startTrace({ title: 'Test' });
+      await trace.finish(); // triggers onClose → removed from activeTraces
+      mockFetch.mockClear();
+
+      await sdk.shutdown(); // nothing to close
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('configuration', () => {
     it('should throw when http transport has no endpoint', () => {
       expect(

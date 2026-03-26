@@ -19,7 +19,9 @@ export type {
   StartTraceOptions,
   StartStepOptions,
   FinishTraceOptions,
+  FailTraceOptions,
   FinishStepOptions,
+  FailStepOptions,
   LogOptions,
   
   // Handles

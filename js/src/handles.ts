@@ -10,7 +10,9 @@ import {
   TraceEvent,
   TraceEventType,
   FinishTraceOptions,
+  FailTraceOptions,
   FinishStepOptions,
+  FailStepOptions,
   StartStepOptions,
   LogOptions,
   LogLevel,
@@ -77,7 +79,7 @@ export class TraceHandleImpl implements TraceHandle {
   /**
    * Fail trace with error
    */
-  async fail(error: string | Error): Promise<void> {
+  async fail(error: string | Error, options?: FailTraceOptions): Promise<void> {
     if (this.closed) {
       this.logger.warn(`Trace ${this.trace_id} already closed`);
       return;
@@ -94,7 +96,7 @@ export class TraceHandleImpl implements TraceHandle {
       TraceEventType.TRACE_FAILED,
       this.trace_id,
       this.source,
-      { error: errorMessage, stack: errorStack },
+      { error: errorMessage, stack: errorStack, result: options?.result, metadata: options?.metadata },
     ));
   }
 
@@ -264,7 +266,7 @@ export class StepHandleImpl implements StepHandle {
   /**
    * Fail step with error
    */
-  async fail(error: string | Error): Promise<void> {
+  async fail(error: string | Error, options?: FailStepOptions): Promise<void> {
     if (this.closed) {
       this.logger.warn(`Step ${this.step_id} already closed`);
       return;
@@ -280,7 +282,7 @@ export class StepHandleImpl implements StepHandle {
       TraceEventType.STEP_FAILED,
       this.trace_id,
       this.source,
-      { error: errorMessage, stack: errorStack },
+      { error: errorMessage, stack: errorStack, output: options?.output, metadata: options?.metadata },
       this.step_id,
     ));
 

@@ -142,6 +142,11 @@ export interface FinishTraceOptions {
   metadata?: Record<string, any>;
 }
 
+export interface FailTraceOptions {
+  result?: any;
+  metadata?: Record<string, any>;
+}
+
 // ============================================================================
 // STEP OPTIONS
 // ============================================================================
@@ -155,6 +160,11 @@ export interface StartStepOptions {
 }
 
 export interface FinishStepOptions {
+  output?: any;
+  metadata?: Record<string, any>;
+}
+
+export interface FailStepOptions {
   output?: any;
   metadata?: Record<string, any>;
 }
@@ -229,7 +239,7 @@ export interface TraceHandle {
   trace_id: string;
   isClosed(): boolean;
   finish(options?: FinishTraceOptions): Promise<void>;
-  fail(error: string | Error): Promise<void>;
+  fail(error: string | Error, options?: FailTraceOptions): Promise<void>;
   cancel(): Promise<void>;
   startStep(options?: StartStepOptions): Promise<StepHandle>;
   withStep<T>(fn: (step: StepHandle) => Promise<T>, options?: StartStepOptions): Promise<T>;
@@ -244,7 +254,7 @@ export interface StepHandle {
   trace_id: string;
   isClosed(): boolean;
   finish(options?: FinishStepOptions): Promise<void>;
-  fail(error: string | Error): Promise<void>;
+  fail(error: string | Error, options?: FailStepOptions): Promise<void>;
   log(message: string, options?: LogOptions): Promise<void>;
 }
 

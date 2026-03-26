@@ -1,11 +1,11 @@
 <?php
 
-namespace Smartpricing\TraceFlow\Handles;
+namespace Smartness\TraceFlow\Handles;
 
 use Ramsey\Uuid\Uuid;
-use Smartpricing\TraceFlow\DTO\TraceEvent;
-use Smartpricing\TraceFlow\Enums\TraceEventType;
-use Smartpricing\TraceFlow\Enums\LogLevel;
+use Smartness\TraceFlow\DTO\TraceEvent;
+use Smartness\TraceFlow\Enums\LogLevel;
+use Smartness\TraceFlow\Enums\TraceEventType;
 
 class StepHandle
 {
@@ -16,13 +16,27 @@ class StepHandle
         public readonly string $traceId,
         private string $source,
         private \Closure $sendEvent,
-    ) {
+    ) {}
+
+    public function __destruct()
+    {
+        if (! $this->closed) {
+            try {
+                $this->fail('Step not explicitly closed (auto-closed by destructor)');
+            } catch (\Throwable) {}
+        }
+    }
+
+    public function isClosed(): bool
+    {
+        return $this->closed;
     }
 
     public function finish(mixed $output = null, ?array $metadata = null): void
     {
         if ($this->closed) {
             error_log("[TraceFlow] Step {$this->stepId} already closed");
+
             return;
         }
 
@@ -32,22 +46,23 @@ class StepHandle
             eventId: Uuid::uuid4()->toString(),
             eventType: TraceEventType::STEP_FINISHED,
             traceId: $this->traceId,
-            timestamp: now()->toIso8601String(),
+            timestamp: now('UTC')->format('Y-m-d\TH:i:s.v\Z'),
             source: $this->source,
             payload: array_filter([
                 'output' => $output,
                 'metadata' => $metadata,
-            ]),
+            ], fn ($value) => $value !== null),
             stepId: $this->stepId,
         );
 
         ($this->sendEvent)($event);
     }
 
-    public function fail(string|\Throwable $error): void
+    public function fail(string|\Throwable $error, mixed $output = null, ?array $metadata = null): void
     {
         if ($this->closed) {
             error_log("[TraceFlow] Step {$this->stepId} already closed");
+
             return;
         }
 
@@ -60,12 +75,14 @@ class StepHandle
             eventId: Uuid::uuid4()->toString(),
             eventType: TraceEventType::STEP_FAILED,
             traceId: $this->traceId,
-            timestamp: now()->toIso8601String(),
+            timestamp: now('UTC')->format('Y-m-d\TH:i:s.v\Z'),
             source: $this->source,
             payload: array_filter([
                 'error' => $errorMessage,
                 'stack' => $errorStack,
-            ]),
+                'output' => $output,
+                'metadata' => $metadata,
+            ], fn ($value) => $value !== null),
             stepId: $this->stepId,
         );
 
@@ -78,18 +95,17 @@ class StepHandle
             eventId: Uuid::uuid4()->toString(),
             eventType: TraceEventType::LOG_EMITTED,
             traceId: $this->traceId,
-            timestamp: now()->toIso8601String(),
+            timestamp: now('UTC')->format('Y-m-d\TH:i:s.v\Z'),
             source: $this->source,
-            payload: [
+            payload: array_filter([
                 'message' => $message,
                 'level' => $level instanceof LogLevel ? $level->value : $level,
                 'event_type' => $eventType,
                 'details' => $details,
-            ],
+            ], fn ($value) => $value !== null),
             stepId: $this->stepId,
         );
 
         ($this->sendEvent)($event);
     }
 }
-

@@ -1,0 +1,100 @@
+name: Split Laravel Package
+
+on:
+  push:
+    branches: [master, main]
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0
+    paths:
+      - 'php/laravel/**'
+      - '.github/workflows/split-laravel.yml'
+  release:
+    types: [created]
+  workflow_dispatch:
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    name: Split php/laravel to separate repository
+    permissions:
+      contents: read  # We only need read for this repo, PAT handles write to split repo
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for subtree split
+          token: ${{ secrets.GITHUB_TOKEN }}  # Use default token for checkout
+
+      - name: Cache splitsh-lite
+        uses: actions/cache@v4
+        with:
+          path: '/usr/local/bin/splitsh-lite'
+          key: ${{ runner.os }}-splitsh-lite-v1
+
+      - name: Install splitsh-lite
+        run: |
+          if [ ! -f "/usr/local/bin/splitsh-lite" ]; then
+            curl -L https://github.com/splitsh/lite/releases/download/v1.0.1/lite_linux_amd64.tar.gz | tar -xz
+            sudo mv splitsh-lite /usr/local/bin/
+            sudo chmod +x /usr/local/bin/splitsh-lite
+          fi
+
+      - name: Split php/laravel subdirectory
+        run: |
+          # Split the subdirectory
+          splitsh-lite --prefix=php/laravel --target=refs/heads/split-laravel
+
+          # If this is a tag, also create the split tag
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "Creating tag: ${TAG_NAME}"
+            # Delete tag if it exists, then create it on the split branch
+            git tag -d "${TAG_NAME}" 2>/dev/null || true
+            git tag "${TAG_NAME}" split-laravel
+          fi
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Remove GitHub's automatic credential helper (it interferes with our PAT)
+          git config --global --unset-all http.https://github.com/.extraheader || true
+
+      - name: Push to split repository
+        env:
+          SPLIT_TOKEN: ${{ secrets.LARAVEL_SPLIT_TOKEN }}
+        run: |
+          # Ensure no credential helpers interfere
+          git config --local --unset-all credential.helper || true
+          git config --local --unset-all http.https://github.com/.extraheader || true
+
+          # Use PAT for authentication (bypasses workflow permission restrictions)
+          git remote add split-repo "https://${SPLIT_TOKEN}@github.com/smartpricing/traceflow-laravel.git" 2>/dev/null || git remote set-url split-repo "https://${SPLIT_TOKEN}@github.com/smartpricing/traceflow-laravel.git"
+
+          # Push branch with detailed output for debugging
+          echo "Pushing branch to split repository..."
+          git push split-repo split-laravel:main --force --verbose
+
+          # If this is a tag, push the tag too
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "Pushing tag ${TAG_NAME} to split repository..."
+            git push split-repo "${TAG_NAME}" --verbose
+          fi
+
+      - name: Summary
+        run: |
+          echo "✅ Successfully split php/laravel to smartpricing/traceflow-laravel"
+          echo "📦 Package: smartness/traceflow-laravel"
+          echo "🔗 Repository: https://github.com/smartpricing/traceflow-laravel"
+          echo "🌿 Branch: main"
+
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "🏷️  Tag: ${TAG_NAME}"
+            echo ""
+            echo "🎉 Release ${TAG_NAME} is ready!"
+            echo "📦 Install with: composer require smartness/traceflow-laravel:${TAG_NAME}"
+          fi

@@ -1,0 +1,59 @@
+{
+  "name": "@dev.smartpricing/traceflow-sdk",
+  "version": "2.6.1",
+  "description": "Stateless SDK for distributed tracing with HTTP and Kafka transport support",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "typecheck": "tsc --noEmit",
+    "release": "standard-version"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com-sp:smartpricing/traceflow-sdk.git"
+  },
+  "keywords": [
+    "tracing",
+    "distributed-tracing",
+    "monitoring",
+    "observability",
+    "kafka",
+    "http",
+    "async",
+    "traces",
+    "steps",
+    "logs"
+  ],
+  "author": "Andrei Borcea",
+  "license": "ISC",
+  "dependencies": {
+    "uuid": "^13.0.0"
+  },
+  "peerDependencies": {
+    "@confluentinc/kafka-javascript": "^1.6.0"
+  },
+  "peerDependenciesMeta": {
+    "@confluentinc/kafka-javascript": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/uuid": "^9.0.7",
+    "standard-version": "^9.5.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

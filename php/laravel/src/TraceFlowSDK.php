@@ -1,36 +1,61 @@
 <?php
 
-namespace Smartpricing\TraceFlow;
+namespace Smartness\TraceFlow;
 
-use Ramsey\Uuid\Uuid;
-use Smartpricing\TraceFlow\DTO\TraceEvent;
-use Smartpricing\TraceFlow\Enums\TraceEventType;
-use Smartpricing\TraceFlow\Handles\TraceHandle;
-use Smartpricing\TraceFlow\Handles\StepHandle;
-use Smartpricing\TraceFlow\Transport\TransportInterface;
-use Smartpricing\TraceFlow\Transport\HttpTransport;
 use GuzzleHttp\Client;
+use Ramsey\Uuid\Uuid;
+use Smartness\TraceFlow\DTO\TraceEvent;
+use Smartness\TraceFlow\Enums\TraceEventType;
+use Smartness\TraceFlow\Handles\StepHandle;
+use Smartness\TraceFlow\Handles\TraceHandle;
+use Smartness\TraceFlow\Context\TraceFlowContext;
+use Smartness\TraceFlow\Transport\AsyncHttpTransport;
+use Smartness\TraceFlow\Transport\HttpTransport;
+use Smartness\TraceFlow\Transport\TransportInterface;
 
 class TraceFlowSDK
 {
     private TransportInterface $transport;
+
     private string $source;
+
     private ?string $endpoint;
+
     private bool $silentErrors;
+
+    private ?string $apiKey;
+
+    private float $timeout;
+
+    /** @var array<string, TraceHandle> */
     private array $activeTraces = [];
-    private ?string $currentTraceId = null; // Simple context storage
 
     public function __construct(array $config)
     {
+        if (empty($config['source'])) {
+            throw new \InvalidArgumentException('TraceFlow: "source" config key is required');
+        }
+
         $this->source = $config['source'];
         $this->endpoint = $config['endpoint'] ?? null;
         $this->silentErrors = $config['silent_errors'] ?? true;
+        $this->apiKey = $config['api_key'] ?? null;
+        $this->timeout = (float) ($config['timeout'] ?? 5.0);
 
-        // Initialize transport
-        if (($config['transport'] ?? 'http') === 'http') {
-            $this->transport = new HttpTransport($config);
-        } else {
+        $transportType = $config['transport'] ?? 'http';
+
+        if ($transportType === 'http') {
+            $useAsync = $config['async_http'] ?? true;
+
+            if ($useAsync) {
+                $this->transport = new AsyncHttpTransport($config);
+            } else {
+                $this->transport = new HttpTransport($config);
+            }
+        } elseif ($transportType === 'kafka') {
             throw new \RuntimeException('Kafka transport not yet implemented for PHP');
+        } else {
+            throw new \RuntimeException("Unknown transport type: {$transportType}");
         }
     }
 
@@ -51,12 +76,11 @@ class TraceFlowSDK
     ): TraceHandle {
         $traceId = $traceId ?? Uuid::uuid4()->toString();
 
-        // Create trace started event
         $event = new TraceEvent(
             eventId: Uuid::uuid4()->toString(),
             eventType: TraceEventType::TRACE_STARTED,
             traceId: $traceId,
-            timestamp: now()->toIso8601String(),
+            timestamp: now('UTC')->format('Y-m-d\TH:i:s.v\Z'),
             source: $this->source,
             payload: array_filter([
                 'trace_type' => $traceType,
@@ -68,20 +92,26 @@ class TraceFlowSDK
                 'params' => $params,
                 'trace_timeout_ms' => $traceTimeoutMs,
                 'step_timeout_ms' => $stepTimeoutMs,
-            ]),
+            ], fn ($value) => $value !== null),
         );
 
         $this->sendEvent($event);
+        TraceFlowContext::set($traceId);
 
-        // Track trace
-        $this->activeTraces[$traceId] = true;
-        $this->currentTraceId = $traceId;
-
-        return new TraceHandle(
+        $handle = new TraceHandle(
             traceId: $traceId,
             source: $this->source,
             sendEvent: $this->sendEvent(...),
+            ownsLifecycle: true,
+            onClose: function () use ($traceId) {
+                unset($this->activeTraces[$traceId]);
+            },
+            flushEvents: fn () => $this->transport->flush(),
         );
+
+        $this->activeTraces[$traceId] = $handle;
+
+        return $handle;
     }
 
     /**
@@ -89,21 +119,22 @@ class TraceFlowSDK
      */
     public function getTrace(string $traceId): TraceHandle
     {
-        if (!$this->endpoint) {
+        if (! $this->endpoint) {
             error_log('[TraceFlow] getTrace() requires HTTP transport with endpoint');
-            return new TraceHandle($traceId, $this->source, $this->sendEvent(...));
+
+            return new TraceHandle(
+                traceId: $traceId,
+                source: $this->source,
+                sendEvent: $this->sendEvent(...),
+                flushEvents: fn () => $this->transport->flush(),
+            );
         }
 
         try {
-            $client = new Client(['base_uri' => $this->endpoint]);
-            $response = $client->get("/api/v1/traces/{$traceId}/state");
-            
-            // Update context
-            $this->currentTraceId = $traceId;
-
-            error_log("[TraceFlow] Retrieved trace: {$traceId}");
+            $this->makeHttpClient()->get("/api/v1/traces/{$traceId}/state");
+            TraceFlowContext::set($traceId);
         } catch (\Exception $e) {
-            if (!$this->silentErrors) {
+            if (! $this->silentErrors) {
                 throw $e;
             }
             error_log("[TraceFlow] Error getting trace (silenced): {$e->getMessage()}");
@@ -113,6 +144,7 @@ class TraceFlowSDK
             traceId: $traceId,
             source: $this->source,
             sendEvent: $this->sendEvent(...),
+            flushEvents: fn () => $this->transport->flush(),
         );
     }
 
@@ -121,12 +153,14 @@ class TraceFlowSDK
      */
     public function getCurrentTrace(): ?TraceHandle
     {
-        if (!$this->currentTraceId) {
+        $traceId = TraceFlowContext::currentTraceId();
+
+        if (! $traceId) {
             return null;
         }
 
         return new TraceHandle(
-            traceId: $this->currentTraceId,
+            traceId: $traceId,
             source: $this->source,
             sendEvent: $this->sendEvent(...),
         );
@@ -141,7 +175,8 @@ class TraceFlowSDK
 
         try {
             $result = $callback($trace);
-            $trace->finish(['result' => $result]);
+            $trace->finish($result);
+
             return $result;
         } catch (\Throwable $e) {
             $trace->fail($e);
@@ -154,19 +189,19 @@ class TraceFlowSDK
      */
     public function heartbeat(?string $traceId = null): void
     {
-        $targetTraceId = $traceId ?? $this->currentTraceId;
+        $targetTraceId = $traceId ?? TraceFlowContext::currentTraceId();
 
-        if (!$targetTraceId || !$this->endpoint) {
+        if (! $targetTraceId || ! $this->endpoint) {
             return;
         }
 
         try {
-            $client = new Client(['base_uri' => $this->endpoint]);
-            $client->post("/api/v1/traces/{$targetTraceId}/heartbeat");
-            error_log("[TraceFlow] Heartbeat sent for: {$targetTraceId}");
+            $this->makeHttpClient()->post("/api/v1/traces/{$targetTraceId}/heartbeat");
         } catch (\Exception $e) {
-            if (!$this->silentErrors) {
+            if ($this->silentErrors) {
                 error_log("[TraceFlow] Heartbeat error: {$e->getMessage()}");
+            } else {
+                throw $e;
             }
         }
     }
@@ -180,12 +215,17 @@ class TraceFlowSDK
         mixed $input = null,
         ?array $metadata = null
     ): ?StepHandle {
-        $trace = $this->getCurrentTrace();
+        $traceId = TraceFlowContext::currentTraceId();
 
-        if (!$trace) {
+        if (! $traceId) {
             error_log('[TraceFlow] No active trace context for step');
+
             return null;
         }
+
+        // Prefer the owned handle so the step is tracked for orphan cleanup on shutdown.
+        // Fall back to a floating handle for traces started externally (e.g. via getTrace).
+        $trace = $this->activeTraces[$traceId] ?? $this->getCurrentTrace();
 
         return $trace->startStep($name, $stepType, $input, $metadata);
     }
@@ -197,8 +237,9 @@ class TraceFlowSDK
     {
         $trace = $this->getCurrentTrace();
 
-        if (!$trace) {
+        if (! $trace) {
             error_log("[TraceFlow] {$message}");
+
             return;
         }
 
@@ -206,8 +247,39 @@ class TraceFlowSDK
     }
 
     /**
-     * Send event through transport
+     * Flush pending events
      */
+    public function flush(): void
+    {
+        $this->transport->flush();
+    }
+
+    /**
+     * Shutdown SDK — close all active handles, then flush transport.
+     */
+    public function shutdown(): void
+    {
+        $this->closeAllActive();
+        $this->transport->shutdown();
+    }
+
+    /**
+     * Close all active traces that were not explicitly closed.
+     * Each trace cascades to close its own orphaned steps via closeOrphanedSteps().
+     */
+    private function closeAllActive(): void
+    {
+        foreach ($this->activeTraces as $trace) {
+            if (! $trace->isClosed()) {
+                try {
+                    $trace->fail('Process shutting down');
+                } catch (\Throwable) {}
+            }
+        }
+
+        $this->activeTraces = [];
+    }
+
     private function sendEvent(TraceEvent $event): void
     {
         try {
@@ -221,21 +293,18 @@ class TraceFlowSDK
         }
     }
 
-    /**
-     * Flush pending events
-     */
-    public function flush(): void
+    private function makeHttpClient(): Client
     {
-        $this->transport->flush();
-    }
+        $headers = ['Content-Type' => 'application/json'];
 
-    /**
-     * Shutdown SDK
-     */
-    public function shutdown(): void
-    {
-        error_log('[TraceFlow] Shutting down SDK...');
-        $this->transport->shutdown();
+        if ($this->apiKey) {
+            $headers['X-API-Key'] = $this->apiKey;
+        }
+
+        return new Client([
+            'base_uri' => $this->endpoint,
+            'headers' => $headers,
+            'timeout' => $this->timeout,
+        ]);
     }
 }
-

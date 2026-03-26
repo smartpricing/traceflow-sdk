@@ -1,8 +1,6 @@
-# Dependencies
-node_modules/
-
-# Build output
-dist/
+# JS/TS SDK
+js/node_modules/
+js/dist/
 
 # Environment files
 .env
@@ -27,10 +25,44 @@ yarn-debug.log*
 yarn-error.log*
 
 # Testing
-coverage/
+js/coverage/
 .nyc_output/
 
 # Misc
 *.tsbuildinfo
 .eslintcache
 
+# PHP
+php/laravel/vendor
+php/laravel/composer.lock
+php/laravel/.phpunit.result.cache
+
+# PHPUnit local configuration (may contain credentials)
+# Use phpunit.xml.dist as template
+php/laravel/phpunit.xml
+**/phpunit.xml
+
+# PHP test output and artifacts
+php/laravel/test-results.txt
+php/laravel/test-output.log
+**/test-results.txt
+**/test-output.log
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+*~
+
+# Test files with credentials (DO NOT COMMIT)
+# Use .example files as templates, then copy and add your credentials
+test-live.php
+**/test-live.php
+
+# Sensitive data patterns (additional protection)
+**/*secret*
+**/*credential*
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx

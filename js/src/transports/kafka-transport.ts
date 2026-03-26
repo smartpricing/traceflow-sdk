@@ -5,6 +5,7 @@
 
 import { TraceEvent, TraceTransport, KafkaConfig } from '../types';
 import { LoggerLike } from '../logger';
+import { sanitizePayload } from './sanitize';
 
 export interface KafkaTransportConfig extends KafkaConfig {
   topic?: string;
@@ -55,7 +56,7 @@ export class KafkaTransport implements TraceTransport {
         messages: [
           {
             key: event.trace_id, // Ensures ordering per trace
-            value: JSON.stringify(event),
+            value: JSON.stringify(sanitizePayload(event)),
             headers: {
               event_type: event.event_type,
               trace_id: event.trace_id,

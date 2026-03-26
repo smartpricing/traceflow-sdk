@@ -15,6 +15,7 @@ import {
   HTTPLogPayload,
 } from '../types';
 import { LoggerLike } from '../logger';
+import { sanitizePayload } from './sanitize';
 
 export interface HTTPTransportConfig {
   endpoint: string;
@@ -412,7 +413,7 @@ export class HTTPTransport implements TraceTransport {
       const response = await fetch(url, {
         method,
         headers,
-        body: JSON.stringify(body),
+        body: JSON.stringify(sanitizePayload(body)),
         signal: controller.signal,
       });
 

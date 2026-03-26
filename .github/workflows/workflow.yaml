@@ -44,8 +44,12 @@ jobs:
           if git log -1 --pretty=%B | grep -q "chore(release)"; then
             echo "Version bump commit found, skipping release to avoid loop."
           else
-            echo "Running release step..."
-            npm run release -- --releaseCommitMessageFormat "chore(release): bump version to %s [skip ci]"
+            # Extract version from branch name (e.g. release/2.6.0 → 2.6.0)
+            BRANCH="${GITHUB_REF#refs/heads/}"
+            VERSION=$(echo "${BRANCH}" | sed -E 's/release\///')
+
+            echo "Running release step with version ${VERSION}..."
+            npm run release -- --release-as "${VERSION}" --releaseCommitMessageFormat "chore(release): bump version to %s [skip ci]"
 
             git push --set-upstream origin HEAD || true
             git push --follow-tags

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## 2.4.0 (2026-03-26)
+
+
+### Features
+
+* add output and metadata parameters to fail() on both trace and step handles ([7b039d1](https://github.com-sp/smartpricing/traceflow-sdk/commit/7b039d13d1a69e099b9bda203662f224b4a80fbb))
+
 ## 2.3.4 (2026-02-28) - Remove Queue Integration
 
 ### Removed

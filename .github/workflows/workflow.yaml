@@ -66,24 +66,21 @@ jobs:
 
           RELEASE_BRANCH="${GITHUB_REF#refs/heads/}"
 
-          # Fetch complete history for develop, master, and the release branch
-          git fetch --unshallow || true
-          git fetch origin develop master "${RELEASE_BRANCH}"
-
-          # MERGE INTO DEVELOP
-          if git ls-remote --exit-code --heads origin develop > /dev/null && \
-             git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" > /dev/null; then
-
-            git checkout develop
-            VERSION=$(echo "${RELEASE_BRANCH}" | sed -E 's/release\/v(.+)/\1/')
-            echo "Merging release branch ${RELEASE_BRANCH} into develop (version ${VERSION})"
-            git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" || \
-              git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" --allow-unrelated-histories
-
-            git push origin develop
-          else
-            echo "Either 'develop' or '${RELEASE_BRANCH}' branch does not exist. Skipping merge into develop."
+          if ! git ls-remote --exit-code --heads origin develop > /dev/null 2>&1; then
+            echo "Branch 'develop' does not exist. Skipping merge into develop."
+            exit 0
           fi
+
+          git fetch --unshallow || true
+          git fetch origin develop "${RELEASE_BRANCH}"
+
+          git checkout develop
+          VERSION=$(echo "${RELEASE_BRANCH}" | sed -E 's/release\///')
+          echo "Merging release branch ${RELEASE_BRANCH} into develop (version ${VERSION})"
+          git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" || \
+            git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" --allow-unrelated-histories
+
+          git push origin develop
 
       - name: Merge release branch into master
         run: |
@@ -92,23 +89,21 @@ jobs:
 
           RELEASE_BRANCH="${GITHUB_REF#refs/heads/}"
 
-          # Fetch complete history for master and the release branch
+          if ! git ls-remote --exit-code --heads origin master > /dev/null 2>&1; then
+            echo "Branch 'master' does not exist. Skipping merge into master."
+            exit 0
+          fi
+
           git fetch --unshallow || true
           git fetch origin master "${RELEASE_BRANCH}"
 
-          if git ls-remote --exit-code --heads origin master > /dev/null && \
-             git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" > /dev/null; then
+          git checkout master
+          VERSION=$(echo "${RELEASE_BRANCH}" | sed -E 's/release\///')
+          echo "Merging release branch ${RELEASE_BRANCH} into master (version ${VERSION})"
+          git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" || \
+            git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" --allow-unrelated-histories
 
-            git checkout master
-            VERSION=$(echo "${RELEASE_BRANCH}" | sed -E 's/release\/v(.+)/\1/')
-            echo "Merging release branch ${RELEASE_BRANCH} into master (version ${VERSION})"
-            git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" || \
-              git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" --allow-unrelated-histories
-
-            git push origin master
-          else
-            echo "Either 'master' or '${RELEASE_BRANCH}' branch does not exist. Skipping merge into master."
-          fi
+          git push origin master
 
       - name: Delete release branch
         run: |

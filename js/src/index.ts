@@ -61,3 +61,6 @@ export type { TraceFlowFastifyOptions } from './middleware/fastify';
 // Context manager (for advanced usage)
 export { ContextManager } from './context-manager';
 
+// UUID validation (for advanced usage)
+export { isValidUuid, ensureValidUuid } from './validate-uuid';
+

@@ -38,6 +38,7 @@ import { HTTPTransport } from './transports/http-transport';
 import { KafkaTransport } from './transports/kafka-transport';
 import { Logger } from './logger';
 import { createTraceEvent } from './event-factory';
+import { ensureValidUuid } from './validate-uuid';
 
 /**
  * Main SDK class for TraceFlow distributed tracing
@@ -149,6 +150,7 @@ export class TraceFlowSDK {
    * ```
    */
   async getTrace(traceId: string): Promise<TraceHandle> {
+    traceId = ensureValidUuid(traceId, this.logger, 'trace_id');
     this.logger.info(`Getting trace: ${traceId}`);
 
     // Only HTTP transport supports state retrieval
@@ -241,7 +243,7 @@ export class TraceFlowSDK {
    * If trace_id is provided, it's idempotent (can be called multiple times)
    */
   async startTrace(options?: StartTraceOptions): Promise<TraceHandle> {
-    const trace_id = options?.trace_id || uuidv4();
+    const trace_id = ensureValidUuid(options?.trace_id, this.logger, 'trace_id');
 
     // Send trace started event
     await this.sendEvent(createTraceEvent(
@@ -319,7 +321,7 @@ export class TraceFlowSDK {
     }
 
     // Fallback for traces not owned by this SDK instance (e.g. via getTrace())
-    const step_id = options?.step_id || uuidv4();
+    const step_id = ensureValidUuid(options?.step_id, this.logger, 'step_id');
 
     await this.sendEvent(createTraceEvent(
       TraceEventType.STEP_STARTED,
@@ -459,7 +461,9 @@ export class TraceFlowSDK {
    * Only works with HTTP transport
    */
   async heartbeat(traceId?: string): Promise<void> {
-    const targetTraceId = traceId || this.contextManager.getCurrentTraceId();
+    const targetTraceId = traceId
+      ? ensureValidUuid(traceId, this.logger, 'trace_id')
+      : this.contextManager.getCurrentTraceId();
 
     if (!targetTraceId) {
       this.logger.warn('No trace ID for heartbeat');

@@ -37,8 +37,15 @@ describe('TraceFlowSDK', () => {
     });
 
     it('should use provided trace_id', async () => {
-      const trace = await sdk.startTrace({ trace_id: 'custom-id', title: 'Test' });
-      expect(trace.trace_id).toBe('custom-id');
+      const customId = '550e8400-e29b-41d4-a716-446655440000';
+      const trace = await sdk.startTrace({ trace_id: customId, title: 'Test' });
+      expect(trace.trace_id).toBe(customId);
+    });
+
+    it('should replace invalid trace_id with a valid UUID', async () => {
+      const trace = await sdk.startTrace({ trace_id: 'not-a-uuid', title: 'Test' });
+      expect(trace.trace_id).not.toBe('not-a-uuid');
+      expect(trace.trace_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     });
 
     it('should include all trace options in payload', async () => {

@@ -20,6 +20,7 @@ import {
 import { ContextManager } from './context-manager';
 import { LoggerLike } from './logger';
 import { createTraceEvent } from './event-factory';
+import { ensureValidUuid } from './validate-uuid';
 
 /**
  * Internal trace handle implementation
@@ -125,7 +126,7 @@ export class TraceHandleImpl implements TraceHandle {
    * Start a new step within this trace
    */
   async startStep(options?: StartStepOptions): Promise<StepHandle> {
-    const step_id = options?.step_id || uuidv4();
+    const step_id = ensureValidUuid(options?.step_id, this.logger, 'step_id');
 
     await this.sendEvent(createTraceEvent(
       TraceEventType.STEP_STARTED,

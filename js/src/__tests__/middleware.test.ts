@@ -70,16 +70,17 @@ describe('Express Middleware', () => {
   });
 
   it('should extract trace ID from request header', async () => {
+    const incomingUuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
     const middleware = createExpressMiddleware(sdk);
     const req = createMockReq({
-      headers: { 'x-trace-id': 'incoming-trace-id' },
+      headers: { 'x-trace-id': incomingUuid },
     });
     const res = createMockRes();
     const next = vi.fn();
 
     await middleware(req, res, next);
 
-    expect(req.traceflowTraceId).toBe('incoming-trace-id');
+    expect(req.traceflowTraceId).toBe(incomingUuid);
   });
 
   it('should skip ignored paths', async () => {
@@ -137,19 +138,20 @@ describe('Express Middleware', () => {
   });
 
   it('should support custom header name', async () => {
+    const customUuid = '550e8400-e29b-41d4-a716-446655440000';
     const middleware = createExpressMiddleware(sdk, {
       headerName: 'x-request-id',
     });
     const req = createMockReq({
-      headers: { 'x-request-id': 'custom-id' },
+      headers: { 'x-request-id': customUuid },
     });
     const res = createMockRes();
     const next = vi.fn();
 
     await middleware(req, res, next);
 
-    expect(req.traceflowTraceId).toBe('custom-id');
-    expect(res.setHeader).toHaveBeenCalledWith('x-request-id', 'custom-id');
+    expect(req.traceflowTraceId).toBe(customUuid);
+    expect(res.setHeader).toHaveBeenCalledWith('x-request-id', customUuid);
   });
 });
 

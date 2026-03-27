@@ -47,7 +47,7 @@ public class TraceFlowClient {
     }
 
     public TraceHandle startTrace(StartTraceOptions options) {
-        String traceId = options.traceId() != null ? options.traceId() : UUID.randomUUID().toString();
+        String traceId = UuidValidator.ensureValid(options.traceId(), "trace_id");
 
         Map<String, Object> payload = new HashMap<>();
         putIfNotNull(payload, "trace_type", options.traceType());

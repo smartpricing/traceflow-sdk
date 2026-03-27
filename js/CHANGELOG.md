@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### 2.6.2 (2026-03-27)
+
+
+### Bug Fixes
+
+* validate and auto-replace invalid UUIDs in all SDKs ([1161ff3](https://github.com-sp/smartpricing/traceflow-sdk/commit/1161ff3ec9b1a3fe616ceb80cb1a29d7f385723b))
+
 ## 2.3.4 (2026-02-28) - Remove Queue Integration
 
 ### Removed

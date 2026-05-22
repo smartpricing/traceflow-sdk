@@ -85,6 +85,14 @@ export interface KafkaConfig {
 export interface TraceFlowSDKConfig {
   transport: 'http' | 'kafka';
   source: string;
+
+  /**
+   * Master kill switch. When false, the SDK keeps its full public surface
+   * (startTrace/startStep/finish/fail/log all keep working) but every event
+   * is routed to a NullTransport — no HTTP, no retries, no circuit-breaker
+   * noise, no required endpoint. Defaults to true.
+   */
+  enabled?: boolean;
   
   // HTTP transport options
   endpoint?: string;

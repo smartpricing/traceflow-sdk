@@ -297,6 +297,12 @@ interface TraceFlowSDKConfig {
   // Transport
   transport: 'http' | 'kafka';
   source: string;
+
+  // Master kill switch — when false, the SDK keeps its full public surface but
+  // every event is routed to a NullTransport (no HTTP, no Kafka, no required
+  // endpoint/broker config). Default: true.
+  enabled?: boolean;
+
   
   // HTTP options
   endpoint?: string;
@@ -335,6 +341,18 @@ interface TraceFlowSDKConfig {
   logLevel?: 'debug' | 'info' | 'warn' | 'error'; // Default: 'info'
   logger?: { debug, info, warn, error }; // Custom logger
 }
+```
+
+### Disabling the SDK
+
+Set `enabled: false` to route every event to a `NullTransport`. All API calls — `startTrace`, `startStep`, `finish`, `fail`, `log` — keep working, but nothing leaves the process. Useful for local development, tests, or environments where the TraceFlow backend isn't reachable.
+
+```typescript
+const sdk = new TraceFlowSDK({
+  transport: 'http',
+  source: 'my-service',
+  enabled: false, // no HTTP, no required endpoint
+});
 ```
 
 ## 📚 API Reference

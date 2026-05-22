@@ -280,6 +280,47 @@ describe('TraceFlowSDK', () => {
       ).toThrow('kafka');
     });
 
+    describe('enabled flag (NullTransport)', () => {
+      it('should not require endpoint when enabled is false', () => {
+        expect(
+          () =>
+            new TraceFlowSDK({
+              transport: 'http',
+              source: 'test',
+              enabled: false,
+              enableLogging: false,
+              autoFlushOnExit: false,
+            })
+        ).not.toThrow();
+      });
+
+      it('should not make any HTTP calls when disabled', async () => {
+        const disabledSdk = new TraceFlowSDK({
+          transport: 'http',
+          source: 'test',
+          enabled: false,
+          enableLogging: false,
+          autoFlushOnExit: false,
+        });
+
+        const trace = await disabledSdk.startTrace({ title: 'noop' });
+        const step = await trace.startStep({ name: 'step' });
+        await step.finish({ output: 'done' });
+        await trace.log('hello');
+        await trace.finish({ result: 'ok' });
+        await disabledSdk.flush();
+        await disabledSdk.shutdown();
+
+        expect(mockFetch).not.toHaveBeenCalled();
+        expect(trace.trace_id).toBeDefined();
+      });
+
+      it('should default enabled to true', async () => {
+        await sdk.startTrace({ title: 'enabled by default' });
+        expect(mockFetch).toHaveBeenCalled();
+      });
+    });
+
     it('should accept circuit breaker config', () => {
       const customSdk = new TraceFlowSDK({
         transport: 'http',

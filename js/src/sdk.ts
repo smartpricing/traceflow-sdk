@@ -36,6 +36,7 @@ import { ContextManager } from './context-manager';
 import { TraceHandleImpl, StepHandleImpl } from './handles';
 import { HTTPTransport } from './transports/http-transport';
 import { KafkaTransport } from './transports/kafka-transport';
+import { NullTransport } from './transports/null-transport';
 import { Logger } from './logger';
 import { createTraceEvent } from './event-factory';
 import { ensureValidUuid } from './validate-uuid';
@@ -89,6 +90,7 @@ export class TraceFlowSDK {
    */
   constructor(config: TraceFlowSDKConfig) {
     this.config = {
+      enabled: true,
       silentErrors: true,
       autoFlushOnExit: true,
       flushTimeoutMs: 5000,
@@ -536,6 +538,13 @@ export class TraceFlowSDK {
    * Create transport based on config
    */
   private createTransport(): TraceTransport {
+    // Master kill switch. When disabled, route every event to a NullTransport
+    // — no HTTP, no Kafka, no required endpoint/broker config.
+    if (this.config.enabled === false) {
+      this.logger.info('SDK disabled — using NullTransport (all events will be dropped)');
+      return new NullTransport();
+    }
+
     if (this.config.transport === 'http') {
       if (!this.config.endpoint) {
         throw new Error('HTTP transport requires endpoint configuration');

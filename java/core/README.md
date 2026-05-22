@@ -60,6 +60,7 @@ mvn clean install
 
 | Variable | Default | Description |
 |---|---|---|
+| `TRACEFLOW_ENABLED` | `true` | Master kill switch. When `false`, the SDK keeps its full public surface but every event is routed to a `NullTransport` — no HTTP, no retries, no log noise, no required endpoint. |
 | `TRACEFLOW_URL` | `http://localhost:3009` | TraceFlow server endpoint |
 | `TRACEFLOW_API_KEY` | _(none)_ | API key for authentication |
 | `TRACEFLOW_SOURCE` | `java-app` | Service identifier |
@@ -73,6 +74,7 @@ mvn clean install
 
 ```java
 TraceFlowConfig config = TraceFlowConfig.builder()
+        .enabled(true)
         .endpoint("http://traceflow.internal:3009")
         .apiKey("your-api-key")
         .source("order-service")
@@ -85,6 +87,10 @@ TraceFlowConfig config = TraceFlowConfig.builder()
 
 TraceFlowClient client = new TraceFlowClient(config);
 ```
+
+### Disabling the SDK
+
+Set `TRACEFLOW_ENABLED=false` (or `.enabled(false)` on the builder) to route every event to a `NullTransport`. All API calls — `startTrace`, `startStep`, `finish`, `fail`, `log` — keep working, but nothing leaves the process. Useful for local development, tests, or staging environments where the TraceFlow server isn't reachable.
 
 ### From Environment (Zero Config)
 

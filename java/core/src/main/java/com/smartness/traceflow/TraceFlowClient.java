@@ -8,6 +8,7 @@ import com.smartness.traceflow.handles.StepHandle;
 import com.smartness.traceflow.handles.TraceHandle;
 import com.smartness.traceflow.transport.AsyncHttpTransport;
 import com.smartness.traceflow.transport.HttpTransport;
+import com.smartness.traceflow.transport.NullTransport;
 import com.smartness.traceflow.transport.Transport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +30,13 @@ public class TraceFlowClient {
 
     public TraceFlowClient(TraceFlowConfig config) {
         this.config = config;
+        // Master kill switch. When disabled, the SDK keeps its full public surface
+        // (startTrace/startStep/finish/fail/log all keep working) but events go to a
+        // NullTransport — no HTTP, no retries, no log noise, no required endpoint.
+        if (!config.enabled()) {
+            this.transport = new NullTransport();
+            return;
+        }
         this.transport = config.async()
                 ? new AsyncHttpTransport(config)
                 : new HttpTransport(config);

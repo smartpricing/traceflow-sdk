@@ -35,6 +35,7 @@ class TraceFlowConfigTest {
     void builderUsesDefaults() {
         TraceFlowConfig config = TraceFlowConfig.builder().build();
 
+        assertTrue(config.enabled());
         assertEquals("http://localhost:3009", config.endpoint());
         assertNull(config.apiKey());
         assertEquals("java-app", config.source());
@@ -43,6 +44,12 @@ class TraceFlowConfigTest {
         assertEquals(3, config.maxRetries());
         assertEquals(1000, config.retryDelayMs());
         assertTrue(config.silentErrors());
+    }
+
+    @Test
+    void builderHonorsDisabledFlag() {
+        TraceFlowConfig config = TraceFlowConfig.builder().enabled(false).build();
+        assertFalse(config.enabled());
     }
 
     @Test

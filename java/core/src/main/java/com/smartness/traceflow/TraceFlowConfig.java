@@ -3,6 +3,7 @@ package com.smartness.traceflow;
 import java.time.Duration;
 
 public record TraceFlowConfig(
+        boolean enabled,
         String endpoint,
         String apiKey,
         String source,
@@ -22,6 +23,7 @@ public record TraceFlowConfig(
     }
 
     public static final class Builder {
+        private Boolean enabled;
         private String endpoint;
         private String apiKey;
         private String source;
@@ -32,6 +34,11 @@ public record TraceFlowConfig(
         private Boolean silentErrors;
 
         private Builder() {}
+
+        public Builder enabled(boolean enabled) {
+            this.enabled = enabled;
+            return this;
+        }
 
         public Builder endpoint(String endpoint) {
             this.endpoint = endpoint;
@@ -75,6 +82,7 @@ public record TraceFlowConfig(
 
         public TraceFlowConfig build() {
             return new TraceFlowConfig(
+                    resolveBoolean(enabled, "TRACEFLOW_ENABLED", true),
                     resolve(endpoint, "TRACEFLOW_URL", "http://localhost:3009"),
                     resolve(apiKey, "TRACEFLOW_API_KEY", null),
                     resolve(source, "TRACEFLOW_SOURCE", "java-app"),

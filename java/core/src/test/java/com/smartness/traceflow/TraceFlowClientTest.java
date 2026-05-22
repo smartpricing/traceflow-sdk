@@ -123,6 +123,28 @@ class TraceFlowClientTest {
     }
 
     @Test
+    void disabledClientUsesNullTransportAndStillExposesFullSurface() {
+        TraceFlowClient disabled = new TraceFlowClient(TraceFlowConfig.builder()
+                .enabled(false)
+                // No endpoint required — NullTransport ignores it.
+                .build());
+
+        try {
+            TraceHandle trace = disabled.startTrace();
+            assertNotNull(trace);
+            assertNotNull(trace.getTraceId());
+
+            // All operations are no-ops but must not throw.
+            assertDoesNotThrow(() -> disabled.startStep("step"));
+            assertDoesNotThrow(() -> disabled.log("hello"));
+            assertDoesNotThrow(disabled::flush);
+            assertDoesNotThrow(() -> trace.finish());
+        } finally {
+            disabled.shutdown();
+        }
+    }
+
+    @Test
     void explicitlyClosedTraceRemovedFromRegistry() {
         TraceHandle trace = client.startTrace();
         trace.finish(); // triggers onClose → removed from activeTraces

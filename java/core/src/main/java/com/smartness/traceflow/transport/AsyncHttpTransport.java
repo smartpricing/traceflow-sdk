@@ -133,11 +133,7 @@ public final class AsyncHttpTransport implements Transport {
         };
 
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenAccept(response -> {
-                    if (response.statusCode() >= 400) {
-                        throw new TraceFlowException("HTTP " + response.statusCode() + ": " + response.body());
-                    }
-                });
+                .thenAccept(response -> HttpTransport.throwForStatus(response.statusCode(), response.body()));
     }
 
     @Override

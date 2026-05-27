@@ -1,11 +1,13 @@
 package com.smartness.traceflow.transport;
 
+import com.smartness.traceflow.exception.NonRetryableException;
 import com.smartness.traceflow.exception.TraceFlowException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
@@ -30,7 +32,7 @@ public final class RetryExecutor {
         try {
             return action.call();
         } catch (Exception e) {
-            if (attempt < maxRetries) {
+            if (isRetryable(e) && attempt < maxRetries) {
                 long delay = retryDelayMs * (1L << attempt);
                 log.debug("Retry attempt {} after {}ms: {}", attempt + 1, delay, e.getMessage());
                 try {
@@ -40,6 +42,13 @@ public final class RetryExecutor {
                     throw new TraceFlowException("Retry interrupted", ie);
                 }
                 return execute(action, attempt + 1);
+            }
+            // 4xx client errors are surfaced as-is — no misleading retry count.
+            if (!isRetryable(e)) {
+                if (e instanceof RuntimeException re) {
+                    throw re;
+                }
+                throw new TraceFlowException("Request failed", e);
             }
             throw new TraceFlowException("Failed after " + maxRetries + " retries", e);
         }
@@ -57,15 +66,34 @@ public final class RetryExecutor {
             stage = CompletableFuture.failedFuture(new TraceFlowException("Request failed", e));
         }
         return stage.exceptionallyCompose(ex -> {
-            if (attempt < maxRetries) {
+            if (isRetryable(ex) && attempt < maxRetries) {
                 long delay = retryDelayMs * (1L << attempt);
                 log.debug("Async retry attempt {} after {}ms: {}", attempt + 1, delay, ex.getMessage());
                 Executor delayed = CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS);
                 return CompletableFuture.supplyAsync(() -> null, delayed)
                         .thenCompose(__ -> executeAsync(asyncAction, attempt + 1));
             }
+            // 4xx client errors are surfaced as-is — no misleading retry count.
+            if (!isRetryable(ex)) {
+                return CompletableFuture.failedFuture(unwrap(ex));
+            }
             return CompletableFuture.failedFuture(
                     new TraceFlowException("Failed after " + maxRetries + " retries", ex));
         });
+    }
+
+    /**
+     * Errors are retryable unless explicitly marked otherwise (4xx client errors).
+     */
+    private static boolean isRetryable(Throwable t) {
+        return !(unwrap(t) instanceof NonRetryableException);
+    }
+
+    /** Unwrap the CompletionException that async pipelines wrap causes in. */
+    private static Throwable unwrap(Throwable t) {
+        if (t instanceof CompletionException && t.getCause() != null) {
+            return t.getCause();
+        }
+        return t;
     }
 }

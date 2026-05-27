@@ -6,7 +6,7 @@
 
     <groupId>com.smartness</groupId>
     <artifactId>traceflow-sdk</artifactId>
-    <version>1.2.1</version>
+    <version>1.2.2</version>
     <packaging>jar</packaging>
 
     <name>TraceFlow Java SDK</name>

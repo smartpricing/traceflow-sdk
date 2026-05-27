@@ -3,6 +3,7 @@ package com.smartness.traceflow.transport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartness.traceflow.TraceFlowConfig;
 import com.smartness.traceflow.dto.TraceEvent;
+import com.smartness.traceflow.exception.NonRetryableException;
 import com.smartness.traceflow.exception.TraceFlowException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,9 +71,24 @@ public final class HttpTransport implements Transport {
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-        if (response.statusCode() >= 400) {
-            throw new TraceFlowException("HTTP " + response.statusCode() + ": " + response.body());
+        throwForStatus(response.statusCode(), response.body());
+    }
+
+    /**
+     * Translate an HTTP status into the right exception:
+     *  - 409 is benign (the entity already exists, e.g. a trace_id shared across
+     *    services in distributed tracing) and returns normally;
+     *  - other 4xx are non-retryable client errors;
+     *  - 5xx are retryable server errors.
+     */
+    static void throwForStatus(int code, String body) {
+        if (code == 409 || code < 400) {
+            return;
         }
+        if (code < 500) {
+            throw new NonRetryableException("HTTP " + code + ": " + body);
+        }
+        throw new TraceFlowException("HTTP " + code + ": " + body);
     }
 
     @Override

@@ -49,13 +49,27 @@ class TraceFlowClientTest {
 
     @Test
     void startTraceWithOptions() {
+        // trace_id must be a valid UUID — the SDK uses it directly in server URL
+        // paths (and UUID-typed columns), so non-UUID values are replaced.
+        String customId = "550e8400-e29b-41d4-a716-446655440000";
         TraceHandle handle = client.startTrace(StartTraceOptions.builder()
-                .traceId("custom-id")
+                .traceId(customId)
                 .title("Test Trace")
                 .traceType("unit-test")
                 .build());
 
-        assertEquals("custom-id", handle.getTraceId());
+        assertEquals(customId, handle.getTraceId());
+    }
+
+    @Test
+    void startTraceReplacesInvalidTraceIdWithValidUuid() {
+        TraceHandle handle = client.startTrace(StartTraceOptions.builder()
+                .traceId("not-a-uuid")
+                .build());
+
+        assertNotEquals("not-a-uuid", handle.getTraceId());
+        assertTrue(UuidValidator.isValid(handle.getTraceId()),
+                "invalid trace_id should be replaced with a valid UUID");
     }
 
     @Test

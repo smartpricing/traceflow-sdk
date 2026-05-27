@@ -11,10 +11,13 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 public final class AsyncHttpTransport implements Transport {
 
@@ -28,6 +31,14 @@ public final class AsyncHttpTransport implements Transport {
     private final RetryExecutor retryExecutor;
     private final Queue<CompletableFuture<?>> futures = new ConcurrentLinkedQueue<>();
     private final AtomicInteger eventCount = new AtomicInteger(0);
+
+    /**
+     * Last pending request per entity order key. Requests for the same entity
+     * (e.g. a step's create then update) are chained so an update is never sent
+     * before its create completes, which would 404 on the server. Independent
+     * entities — and logs, which use a null key — still run concurrently.
+     */
+    private final Map<String, CompletableFuture<?>> chains = new ConcurrentHashMap<>();
 
     public AsyncHttpTransport(TraceFlowConfig config) {
         this.endpoint = config.endpoint();
@@ -44,7 +55,12 @@ public final class AsyncHttpTransport implements Transport {
     public void send(TraceEvent event) {
         try {
             EventRouter.Route route = EventRouter.route(event);
-            CompletableFuture<?> future = retryExecutor.executeAsync(() -> executeRequest(route))
+            String orderKey = orderKey(event);
+
+            // The request (with retries and silent-error handling) is wrapped in a
+            // supplier so it can be deferred until any earlier request for the same
+            // entity has completed.
+            Supplier<CompletableFuture<?>> request = () -> retryExecutor.executeAsync(() -> executeRequest(route))
                     .thenRun(() -> eventCount.incrementAndGet())
                     .exceptionally(ex -> {
                         if (silentErrors) {
@@ -54,6 +70,21 @@ public final class AsyncHttpTransport implements Transport {
                         }
                         return null;
                     });
+
+            final CompletableFuture<?> future;
+            if (orderKey == null) {
+                future = request.get();
+            } else {
+                // Atomically chain behind the previous request for this entity.
+                // handle(...) detaches so the next request still runs even if the
+                // previous one failed; the previous future stays in `futures` so its
+                // outcome is still observed at flush time.
+                future = chains.compute(orderKey, (key, previous) ->
+                        previous == null
+                                ? request.get()
+                                : previous.handle((r, ex) -> null).thenCompose(ignored -> request.get()));
+            }
+
             futures.add(future);
             future.whenComplete((r, e) -> futures.remove(future));
         } catch (Exception e) {
@@ -63,6 +94,20 @@ public final class AsyncHttpTransport implements Transport {
                 throw new TraceFlowException("Failed to send event", e);
             }
         }
+    }
+
+    /**
+     * Order key identifying the entity a request belongs to, or null for events
+     * that need no ordering (logs).
+     */
+    private static String orderKey(TraceEvent event) {
+        return switch (event.eventType()) {
+            case TRACE_STARTED, TRACE_FINISHED, TRACE_FAILED, TRACE_CANCELLED ->
+                    "trace:" + event.traceId();
+            case STEP_STARTED, STEP_FINISHED, STEP_FAILED ->
+                    "step:" + event.traceId() + ":" + event.stepId();
+            case LOG_EMITTED -> null;
+        };
     }
 
     private CompletableFuture<Void> executeRequest(EventRouter.Route route) {
@@ -103,6 +148,9 @@ public final class AsyncHttpTransport implements Transport {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
             log.debug("[TraceFlow Async] Flushed {} events", eventCount.get());
             futures.clear();
+            // All requests have settled; drop references to per-entity chains so the
+            // map does not grow for the lifetime of the process.
+            chains.clear();
             eventCount.set(0);
         } catch (Exception e) {
             if (silentErrors) {

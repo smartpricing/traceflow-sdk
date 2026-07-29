@@ -302,6 +302,14 @@ func (t *httpTransport) execute(ctx context.Context, method, url string, body an
 		return err
 	}
 	defer resp.Body.Close()
+	// A 409 Conflict on a create means the entity already exists. In distributed
+	// tracing a trace_id is propagated across services, so more than one service
+	// may try to create the same trace/step — that is expected, not an error, and
+	// must not trip the circuit breaker. Treated as success (matches the Java/PHP
+	// SDKs' isBenignConflict / 409->ok handling).
+	if resp.StatusCode == http.StatusConflict {
+		return nil
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 	}
@@ -358,6 +366,13 @@ func (t *httpTransport) isCircuitOpen() bool {
 }
 
 // drainLocked replays buffered events asynchronously. Caller holds t.mu.
+//
+// Events are replayed sequentially in a single goroutine, preserving the order
+// in which they were queued. This matters for correctness: a step_started
+// (POST /steps) must reach the backend before its step_finished (PATCH
+// /steps/...), otherwise the update races ahead of the create and 404s. Racing
+// one goroutine per event would reorder same-entity events; a single ordered
+// drainer keeps I/O off the locked hot path without sacrificing ordering.
 func (t *httpTransport) drainLocked() {
 	if len(t.pendingEvents) == 0 {
 		return
@@ -365,13 +380,13 @@ func (t *httpTransport) drainLocked() {
 	events := t.pendingEvents
 	t.pendingEvents = nil
 	t.logger.Info("Draining %d pending events after circuit close", len(events))
-	for _, event := range events {
-		go func(e TraceEvent) {
+	go func(evts []TraceEvent) {
+		for _, e := range evts {
 			if err := t.sendEventToAPI(context.Background(), e); err != nil {
 				t.logger.Error("Failed to drain pending event: %v", err)
 			}
-		}(event)
-	}
+		}
+	}(events)
 }
 
 func isNetworkError(err error) bool {

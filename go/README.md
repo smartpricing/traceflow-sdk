@@ -1,5 +1,10 @@
 # TraceFlow SDK for Go
 
+[![Go SDK CI](https://github.com/smartpricing/traceflow-sdk/actions/workflows/go-ci.yml/badge.svg)](https://github.com/smartpricing/traceflow-sdk/actions/workflows/go-ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/smartpricing/traceflow-sdk/go.svg)](https://pkg.go.dev/github.com/smartpricing/traceflow-sdk/go)
+[![Go Report Card](https://goreportcard.com/badge/github.com/smartpricing/traceflow-sdk/go)](https://goreportcard.com/report/github.com/smartpricing/traceflow-sdk/go)
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](./LICENSE)
+
 Stateless, event-based distributed tracing for Go. Zero external dependencies.
 
 ```bash

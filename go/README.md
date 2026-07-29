@@ -91,3 +91,33 @@ id, ok := traceflow.TraceIDFromContext(ctx)
   fails any still-open traces.
 - **Concurrency-safe.** `Client`, `TraceHandle`, and `StepHandle` are safe for
   concurrent use.
+
+## Versioning
+
+This module is released independently from the JS/PHP/Java SDKs in this repo —
+their version numbers do not correspond to each other, so don't read anything
+into them matching or diverging.
+
+Releases are tagged `go/vX.Y.Z` (not just `vX.Y.Z`): Go requires a tag prefixed
+with the subdirectory name for a module that lives in a subdirectory of a
+multi-module repo ([reference](https://go.dev/ref/mod#vcs-version)). You never
+type the `go/` prefix yourself — it's a detail of how this source repo is
+tagged, not part of the version:
+
+```bash
+go get github.com/smartpricing/traceflow-sdk/go@latest    # or @v1.2.3
+```
+
+The module path (`go.mod`: `module github.com/smartpricing/traceflow-sdk/go`)
+has no `/v2` suffix, so per Go's
+[Semantic Import Versioning](https://go.dev/ref/mod#major-version-suffixes)
+only `v0.x.x` and `v1.x.x` can ever be resolved through it — a `v2.0.0` tag
+here would simply fail to resolve for consumers. Breaking changes are expected
+to stay within `v1` (bumping the minor with a documented migration note) for as
+long as practical; if a genuine `v2` is ever needed, the module path itself
+must be renamed to end in `/v2`, which is a breaking change to every
+consumer's import statement, not just a version bump.
+
+Releases are cut via the `Release Go SDK` GitHub Actions workflow
+(`workflow_dispatch`, pick a version, it tags + creates a GitHub Release).
+There is no separate build or publish step — tagging *is* the release.

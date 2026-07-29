@@ -33,6 +33,9 @@ jobs:
         working-directory: go
     steps:
       - name: Validate version
+        # No checkout yet at this point, so override the job's `go` default
+        # working-directory (this step touches no repo files anyway).
+        working-directory: .
         run: |
           version="${{ inputs.version }}"
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

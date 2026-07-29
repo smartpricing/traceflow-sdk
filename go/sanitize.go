@@ -3,6 +3,7 @@ package traceflow
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -95,8 +96,17 @@ func sanitizeValue(v reflect.Value, depth int, seen map[uintptr]bool) any {
 			if field.PkgPath != "" { // unexported
 				continue
 			}
-			name := jsonFieldName(field)
+			name, omitEmpty := jsonFieldName(field)
 			if name == "-" {
+				continue
+			}
+			// omitempty must be honored here, not left to json.Marshal: sanitize
+			// returns a map, and maps have no omitempty. Dropping the option would
+			// put every zero field on the wire ("trace_id":"", "tags":null, …),
+			// which the other SDKs never send — JS because JSON.stringify drops
+			// undefined, PHP because it array_filters nulls — and which the
+			// service rejects with 400 on PATCH (trace_id must be a valid UUID).
+			if omitEmpty && isEmptyValue(v.Field(i)) {
 				continue
 			}
 			out[name] = sanitizeValue(v.Field(i), depth+1, seen)
@@ -108,21 +118,49 @@ func sanitizeValue(v reflect.Value, depth int, seen map[uintptr]bool) any {
 	}
 }
 
-func jsonFieldName(field reflect.StructField) string {
+// jsonFieldName reports the wire name of a struct field and whether its json
+// tag carries the omitempty option, so sanitize can reproduce what
+// json.Marshal would have emitted for the same struct.
+func jsonFieldName(field reflect.StructField) (name string, omitEmpty bool) {
 	tag := field.Tag.Get("json")
 	if tag == "" {
-		return field.Name
+		return field.Name, false
 	}
-	for i := 0; i < len(tag); i++ {
-		if tag[i] == ',' {
-			tag = tag[:i]
-			break
+	name = tag
+	if i := strings.IndexByte(tag, ','); i >= 0 {
+		name = tag[:i]
+		for _, opt := range strings.Split(tag[i+1:], ",") {
+			if opt == "omitempty" {
+				omitEmpty = true
+				break
+			}
 		}
 	}
-	if tag == "" {
-		return field.Name
+	if name == "" {
+		name = field.Name
 	}
-	return tag
+	return name, omitEmpty
+}
+
+// isEmptyValue mirrors encoding/json's notion of empty for the omitempty
+// option: false, 0, a nil pointer or interface, and any empty array, map,
+// slice or string.
+func isEmptyValue(v reflect.Value) bool {
+	switch v.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+		return v.Len() == 0
+	case reflect.Bool:
+		return !v.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return v.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return v.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return v.Float() == 0
+	case reflect.Interface, reflect.Ptr:
+		return v.IsNil()
+	}
+	return false
 }
 
 func markSeen(v reflect.Value, seen map[uintptr]bool) bool {

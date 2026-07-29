@@ -1,0 +1,95 @@
+name: Release Go SDK
+
+# Go modules have no registry to publish to: a "release" is a git tag, fetched
+# directly by consumers via proxy.golang.org. Because this module lives in the
+# go/ subdirectory of a multi-module repo, the tag MUST be prefixed go/
+# (see https://go.dev/ref/mod#vcs-version — "if a module is in a
+# subdirectory... the tag must be prefixed with the subdirectory name").
+#
+# The module path (go/go.mod: `module github.com/smartpricing/traceflow-sdk/go`)
+# carries no /v2 suffix, so per Go's Semantic Import Versioning only v0.x.x and
+# v1.x.x can be resolved through it — see go/README.md#versioning. Bumping past
+# v1 requires renaming the module path, which is a breaking change for every
+# consumer's import statements, not just a version bump.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, semver without the "v" prefix (e.g. 1.0.0). Only 0.x.x / 1.x.x are valid — see go/README.md#versioning.'
+        required: true
+      ref:
+        description: 'Git ref to tag'
+        required: false
+        default: 'main'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - name: Validate version
+        run: |
+          version="${{ inputs.version }}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be X.Y.Z (got '$version')"
+            exit 1
+          fi
+          major="${version%%.*}"
+          if [ "$major" != "0" ] && [ "$major" != "1" ]; then
+            echo "::error::github.com/smartpricing/traceflow-sdk/go has no /v2 path suffix, so only v0.x.x and v1.x.x can be tagged here. See go/README.md#versioning before renaming the module path."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0 # full tag history: needed to find the previous go/ tag
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+
+      - name: Test
+        run: |
+          go vet ./...
+          go test -race ./...
+
+      - name: Ensure the tag does not already exist
+        run: |
+          if git rev-parse -q --verify "refs/tags/go/v${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "::error::go/v${{ inputs.version }} already exists"
+            exit 1
+          fi
+
+      - name: Find the previous go/ release (scopes the auto-generated notes)
+        id: prev
+        run: echo "tag=$(git tag --list 'go/v*' --sort=-v:refname | head -n1)" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "go/v${{ inputs.version }}" -m "Go SDK v${{ inputs.version }}"
+          git push origin "go/v${{ inputs.version }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREV_TAG: ${{ steps.prev.outputs.tag }}
+        run: |
+          if [ -n "$PREV_TAG" ]; then
+            gh release create "go/v${{ inputs.version }}" \
+              --title "Go SDK v${{ inputs.version }}" \
+              --target "${{ inputs.ref }}" \
+              --generate-notes --notes-start-tag "$PREV_TAG"
+          else
+            gh release create "go/v${{ inputs.version }}" \
+              --title "Go SDK v${{ inputs.version }}" \
+              --target "${{ inputs.ref }}" \
+              --generate-notes
+          fi

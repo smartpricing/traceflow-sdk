@@ -1,0 +1,36 @@
+name: Audit and client errors
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  javascript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+      - run: npm ci
+        working-directory: js
+      - run: npm run typecheck:errors && npx vitest run && npm run build:errors
+        working-directory: js
+  laravel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+        working-directory: php/laravel
+      - run: vendor/bin/phpunit --testsuite=Unit
+        working-directory: php/laravel

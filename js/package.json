@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "release": "commit-and-tag-version",
     "test:errors": "vitest run src/__tests__/errors.test.ts",
-    "typecheck:errors": "tsc -p tsconfig.errors.json"
+    "typecheck:errors": "tsc -p tsconfig.errors.json",
+    "build:errors": "tsup --config tsup.errors.config.ts"
   },
   "repository": {
     "type": "git",

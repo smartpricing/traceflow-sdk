@@ -86,7 +86,9 @@ a short flush when leaving the foreground. Set the current screen with
 Promise rejection hooks differ across React Native versions and engines. Pass
 `subscribeUnhandledRejection(listener)`, returning an unsubscribe function, from
 your runtime integration when available. `coverage.unhandledRejections` is false
-without it. The SDK does not replace Hermes's rejection tracker or claim automatic
+without it. Set `requireCoverage: ['globalErrors', 'unhandledRejections']` in
+the hooks argument to reject startup configuration that lacks a required hook;
+failed installation restores the previous handler and removes subscriptions. The SDK does not replace Hermes's rejection tracker or claim automatic
 coverage where no compatible subscription is supplied. Handled promise failures
 can always use `captureException`.
 
@@ -119,8 +121,13 @@ Events exceeding 60 KB or a full queue are dropped. Delivery retries network
 failures, `408`, `429` and `5xx` up to five attempts, preserving exact bytes and ID.
 It respects `Retry-After` and uses exponential backoff. Events older than five
 minutes are discarded; other `4xx` responses are terminal. `getStats()` returns
-sent, dropped, retried and queued counts. No delivery failure creates another
-telemetry error. Browser visibility changes request a flush with `keepalive`.
+sent, dropped, retried and queued counts, plus `droppedByReason`. An optional
+`onDiagnostic` callback reports drops and retries without event payloads. Its
+exceptions are ignored and error capture inside that callback is suppressed to
+avoid recursion. Use a separate health channel to monitor delivery losses. No delivery failure creates another
+telemetry error. Browser visibility changes request a flush with `keepalive`. Flush deadlines
+apply even if a custom transport ignores abort; late replies are ignored. Closing
+the client cancels its pending wait and accounts for queued events once.
 
 This is best-effort delivery. Closing a tab, terminating an app, prolonged offline
 use or fatal JS errors can lose queued events. There is no persistent offline queue.
@@ -145,3 +152,23 @@ Upload every generated chunk with its exact URL path. For mobile use
 actual iOS stack) and the matching composed map. All identity fields must match
 the event. Maps may be uploaded after an error; refreshing its detail resolves
 the new map. Group membership remains build-scoped and unchanged.
+
+## Validate a mobile release
+
+Hook availability is not proof that a runtime emits every error. Before enabling
+this as the only reporter, test on each supported Android/iOS release build:
+
+1. Trigger a global JS error, a rejected promise, and a React render failure.
+   Confirm the corresponding mechanism, context and one occurrence in Traceflow.
+2. Upload that build's composed map and verify a known source filename and line.
+   Repeat after an OTA update with a different `dist`.
+3. Test offline/reconnect, background/foreground, and a fatal JS error. The fatal
+   hook starts delivery before invoking the previous handler, but process exit can
+   still lose the event. Native crashes are not captured.
+4. Verify required coverage flags, handler restoration on disposal, and delivery
+   diagnostics when ingestion returns `429` or `503`.
+
+The repository tests cover hook contracts, stack parsing, retries and cancellation.
+They do not certify a specific React Native/Expo/Hermes version or physical device.
+Run `npm run typecheck:errors`, `npm run test:errors`, and `npm run build:errors`
+to check the frontend distributions without the optional native Kafka dependency.

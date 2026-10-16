@@ -4,6 +4,8 @@
 
 // Main SDK
 export { TraceFlowSDK } from './sdk';
+export { AuditClient, AuditDeliveryError, auditDiff } from './audit';
+export type { AuditEvent, AuditInput, AuditReceipt, AuditClientConfig, AuditJson, AuditObject, AuditReference } from './audit';
 
 // Types
 export type {

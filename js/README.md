@@ -1,5 +1,52 @@
 # TraceFlow SDK v2
 
+## Audit log (server-side)
+
+`AuditClient` records changes independently of an active trace. It uses the new
+HTTP audit endpoint even when the tracing SDK uses Kafka. `sdk.audit` and
+`sdk.recordAudit(input)` expose the same API using the SDK configuration.
+
+```ts
+import { AuditClient, auditDiff } from '@dev.smartpricing/traceflow-sdk';
+
+const audit = new AuditClient({
+  source: 'booking-api',
+  endpoint: 'http://localhost:3009',
+  apiKey: process.env.TRACEFLOW_API_KEY,
+});
+const event = audit.createEvent({
+  subject: { type: 'quote', id: '12345' },
+  action: 'updated',
+  actor: { type: 'user', id: '42' },
+  origin: { channel: 'webapp' },
+  changes: auditDiff({ total: '450.00', note: null }, { total: '420.00' }),
+  metadata: { reason: 'Discount agreed', currency: 'EUR' },
+});
+
+// For durable delivery, persist event in an outbox in the business transaction.
+// The outbox publisher sends exactly this envelope on every attempt.
+const receipt = await audit.record(event);
+```
+
+`recordAudit(input)` is a direct-send convenience; it creates an envelope and then
+sends it. `AuditDeliveryError` exposes `eventId`, `retryable` and `statusCode`.
+Network failures, `408`, `429` and `5xx` retry with a frozen payload and bounded
+backoff. `409` means the ID was reused with different data and is not retried.
+Success requires a `persisted` receipt. Audit errors are never swallowed by
+`silentErrors`; disabled delivery also reports an error so a durable publisher can
+retain and retry the event after re-enabling it.
+
+Types and IDs are arbitrary non-empty strings. Before/after images use `delta` or
+`snapshot`; missing keys, null, booleans and numbers remain distinct. `auditDiff`
+compares nested objects/arrays as whole fields, ignoring object key order. Skip an
+`updated` event when both diff images are empty. Use `{}` before creation and after
+deletion. Custom actions such as `exported` can omit changes.
+
+Select fields and redact metadata before creating the envelope. Large numbers and
+precise decimals must be strings; dates must be explicitly serialized. Maximum
+payload: 256 KiB/depth 32. The server credential belongs only in trusted backend
+processes; audit is not a browser or React Native transport.
+
 🚀 **Production-ready, stateless SDK for distributed tracing**
 
 Trace your distributed systems with confidence using HTTP or Kafka transport.

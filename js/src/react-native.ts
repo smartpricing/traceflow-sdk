@@ -3,6 +3,8 @@ import type { ErrorClientOptions } from "./errors/core";
 export * from "./errors/core";
 export type GlobalErrorHandler = (error: unknown, fatal?: boolean) => void;
 export interface NativeErrorHooks {
+  /** Fail installation if these hooks are missing; previously installed handlers are restored. */
+  requireCoverage?: ("globalErrors" | "unhandledRejections")[];
   errorUtils?: {
     getGlobalHandler(): GlobalErrorHandler;
     setGlobalHandler(handler: GlobalErrorHandler): void;
@@ -37,32 +39,58 @@ export function installReactNativeErrors(
       handled: false,
       context: { fatal: Boolean(fatal) },
     });
-    // Preserve React Native's crash/redbox behavior and any existing reporting hook.
+    // Start delivery before a fatal handler can terminate the JS runtime.
+    // This remains best effort; there is no native crash spool.
+    if (fatal) void client.flush(1000);
     previous?.(error, fatal);
   };
-  errorUtils?.setGlobalHandler(handler);
-  const subscription = hooks.appState?.addEventListener("change", (state) => {
-    client.addBreadcrumb({ category: "app", message: state });
-    if (state !== "active") void client.flush(1000);
-  });
-  const unsubscribe = hooks.subscribeUnhandledRejection?.((reason) => {
-    client.captureException(reason, {
-      mechanism: "unhandledrejection",
-      handled: false,
-    });
-  });
-  return {
-    client,
-    coverage: {
-      globalErrors: Boolean(errorUtils),
-      unhandledRejections: Boolean(unsubscribe),
-    },
-    dispose() {
+  let subscription: { remove(): void } | undefined;
+  let unsubscribe: (() => void) | undefined;
+  const dispose = () => {
+    try {
       if (errorUtils?.getGlobalHandler() === handler && previous)
         errorUtils.setGlobalHandler(previous);
-      subscription?.remove();
-      unsubscribe?.();
-      client.close();
-    },
+    } finally {
+      try {
+        subscription?.remove();
+      } finally {
+        try {
+          unsubscribe?.();
+        } finally {
+          client.close();
+        }
+      }
+    }
   };
+  try {
+    errorUtils?.setGlobalHandler(handler);
+    subscription = hooks.appState?.addEventListener("change", (state) => {
+      client.addBreadcrumb({ category: "app", message: state });
+      if (state !== "active") void client.flush(1000);
+    });
+    unsubscribe = hooks.subscribeUnhandledRejection?.((reason) => {
+      client.captureException(reason, {
+        mechanism: "unhandledrejection",
+        handled: false,
+      });
+    });
+    const coverage = {
+      globalErrors: Boolean(errorUtils),
+      unhandledRejections: Boolean(unsubscribe),
+    };
+    const missing =
+      hooks.requireCoverage?.filter((key) => !coverage[key]) ?? [];
+    if (missing.length)
+      throw new Error(
+        "Missing React Native error hooks: " + missing.join(", "),
+      );
+    return { client, coverage, dispose };
+  } catch (error) {
+    try {
+      dispose();
+    } catch {
+      /* Preserve the installation error. */
+    }
+    throw error;
+  }
 }

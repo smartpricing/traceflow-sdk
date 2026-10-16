@@ -34,6 +34,22 @@ export interface ClientErrorEvent {
   context: Record<string, Json>;
   breadcrumbs: Breadcrumb[];
 }
+export type DropReason =
+  | "sampled"
+  | "filtered"
+  | "invalid"
+  | "oversize"
+  | "queue_full"
+  | "expired"
+  | "rejected"
+  | "retry_exhausted"
+  | "closed";
+export interface ErrorDiagnostic {
+  type: "dropped" | "retry";
+  reason?: DropReason;
+  status?: number;
+  queued: number;
+}
 export interface ErrorClientOptions {
   endpoint: string;
   ingestKey: string;
@@ -47,6 +63,8 @@ export interface ErrorClientOptions {
   fetch?: typeof fetch;
   maxQueueSize?: number;
   sampleRate?: number;
+  /** Contains delivery metadata only. Exceptions in this hook are ignored. */
+  onDiagnostic?: (diagnostic: ErrorDiagnostic) => void;
 }
 export interface CaptureOptions {
   mechanism?: ClientErrorEvent["mechanism"];
@@ -169,6 +187,9 @@ export class ErrorClient {
   private sending?: Promise<void>;
   private closed = false;
   private capturing = false;
+  private reporting = false;
+  private abort?: AbortController;
+  private readonly droppedByReason: Partial<Record<DropReason, number>> = {};
   private readonly send: typeof fetch;
   private readonly maxQueue: number;
   private readonly stats = { sent: 0, dropped: 0, retries: 0 };
@@ -199,6 +220,13 @@ export class ErrorClient {
         options.sampleRate > 1)
     )
       throw new Error("sampleRate must be between 0 and 1");
+    if (
+      options.maxQueueSize !== undefined &&
+      (!Number.isInteger(options.maxQueueSize) ||
+        options.maxQueueSize < 1 ||
+        options.maxQueueSize > 100)
+    )
+      throw new Error("maxQueueSize must be an integer between 1 and 100");
     this.send = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.maxQueue = Math.max(1, Math.min(100, options.maxQueueSize ?? 30));
     this.context = { session_id: uuid(), ...options.context };
@@ -233,7 +261,7 @@ export class ErrorClient {
     error: unknown,
     capture: CaptureOptions = {},
   ): string | undefined {
-    if (this.closed || this.capturing) return;
+    if (this.closed || this.capturing || this.reporting) return;
     this.capturing = true;
     try {
       const now = Date.now();
@@ -242,7 +270,7 @@ export class ErrorClient {
         if (previous && now - previous.at < 1000) return previous.id;
       }
       if (Math.random() >= (this.options.sampleRate ?? 1)) {
-        this.stats.dropped++;
+        this.drop("sampled");
         return;
       }
       const object =
@@ -293,7 +321,7 @@ export class ErrorClient {
       };
       if (this.options.beforeSend) event = this.options.beforeSend(event);
       if (!event) {
-        this.stats.dropped++;
+        this.drop("filtered");
         return;
       }
       const body = JSON.stringify(event);
@@ -303,7 +331,7 @@ export class ErrorClient {
         "_",
       ).length;
       if (bytes > 60000 || this.queue.length >= this.maxQueue) {
-        this.stats.dropped++;
+        this.drop(bytes > 60000 ? "oversize" : "queue_full");
         return;
       }
       this.queue.push({ body, attempts: 0, next: now, created: now });
@@ -312,7 +340,7 @@ export class ErrorClient {
       this.schedule();
       return event.event_id;
     } catch {
-      this.stats.dropped++;
+      this.drop("invalid");
       return;
     } finally {
       this.capturing = false;
@@ -337,12 +365,17 @@ export class ErrorClient {
     }
     while (!this.closed && this.queue.length && Date.now() < deadline) {
       if (this.sending) {
-        await Promise.race([
-          this.sending,
-          new Promise<void>((resolve) =>
-            setTimeout(resolve, Math.max(0, deadline - Date.now())),
-          ),
-        ]);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            this.sending,
+            new Promise<void>((resolve) => {
+              timer = setTimeout(resolve, Math.max(0, deadline - Date.now()));
+            }),
+          ]);
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
         continue;
       }
       const pending = this.queue[0];
@@ -363,25 +396,40 @@ export class ErrorClient {
   private async deliver(pending: Pending, timeoutMs: number): Promise<void> {
     if (Date.now() - pending.created > 300000) {
       this.queue.shift();
-      this.stats.dropped++;
+      this.drop("expired");
       return;
     }
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), timeoutMs);
-    let retryAfter = 0;
+    this.abort = abort;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      abort.signal.addEventListener(
+        "abort",
+        () => reject(new Error("Delivery cancelled")),
+        { once: true },
+      );
+      timer = setTimeout(() => abort.abort(), timeoutMs);
+    });
+    let retryAfter = 0,
+      status: number | undefined;
     try {
-      const response = await this.send(this.options.endpoint, {
-        method: "POST",
-        body: pending.body,
-        headers: {
-          "Content-Type": "application/json",
-          "X-Traceflow-Ingest-Key": this.options.ingestKey,
-        },
-        signal: abort.signal,
-        ...(this.options.platform === "browser"
-          ? { keepalive: true, credentials: "omit" as const }
-          : {}),
-      });
+      const response = await Promise.race([
+        cancelled,
+        this.send(this.options.endpoint, {
+          method: "POST",
+          body: pending.body,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Traceflow-Ingest-Key": this.options.ingestKey,
+          },
+          signal: abort.signal,
+          ...(this.options.platform === "browser"
+            ? { keepalive: true, credentials: "omit" as const }
+            : {}),
+        }),
+      ]);
+      if (this.closed) return;
+      status = response.status;
       if (response.ok) {
         this.queue.shift();
         this.stats.sent++;
@@ -393,7 +441,7 @@ export class ErrorClient {
         response.status !== 408
       ) {
         this.queue.shift();
-        this.stats.dropped++;
+        this.drop("rejected", response.status);
         return;
       }
       const header = response.headers.get("Retry-After");
@@ -404,12 +452,14 @@ export class ErrorClient {
     } catch {
       /* The transport cannot recursively capture its own failures. */
     } finally {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
+      this.abort = undefined;
     }
+    if (this.closed) return;
     pending.attempts++;
     if (pending.attempts >= 5) {
       this.queue.shift();
-      this.stats.dropped++;
+      this.drop("retry_exhausted", status);
       return;
     }
     pending.next =
@@ -419,14 +469,37 @@ export class ErrorClient {
         Math.min(30000, 1000 * 2 ** (pending.attempts - 1)),
       );
     this.stats.retries++;
+    this.notify({ type: "retry", status, queued: this.queue.length });
+  }
+  private notify(diagnostic: ErrorDiagnostic) {
+    if (this.reporting) return;
+    this.reporting = true;
+    try {
+      this.options.onDiagnostic?.(diagnostic);
+    } catch {
+      /* Never report reporting failures. */
+    } finally {
+      this.reporting = false;
+    }
+  }
+  private drop(reason: DropReason, status?: number, count = 1) {
+    this.stats.dropped += count;
+    this.droppedByReason[reason] = (this.droppedByReason[reason] ?? 0) + count;
+    this.notify({ type: "dropped", reason, status, queued: this.queue.length });
   }
   getStats() {
-    return { ...this.stats, queued: this.queue.length };
+    return {
+      ...this.stats,
+      queued: this.queue.length,
+      droppedByReason: { ...this.droppedByReason },
+    };
   }
   close(): void {
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
-    this.stats.dropped += this.queue.length;
+    const count = this.queue.length;
     this.queue = [];
+    if (count) this.drop("closed", undefined, count);
+    this.abort?.abort();
   }
 }

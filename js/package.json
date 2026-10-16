@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "release": "commit-and-tag-version",
     "test:errors": "vitest run src/__tests__/errors.test.ts",
-    "typecheck:errors": "tsc -p tsconfig.errors.json"
+    "typecheck:errors": "tsc -p tsconfig.errors.json",
+    "build:errors": "tsup --config tsup.errors.config.ts"
   },
   "repository": {
     "type": "git",
@@ -60,7 +61,7 @@
     "commit-and-tag-version": "^12.7.3",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=18.0.0"

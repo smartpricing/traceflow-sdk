@@ -212,3 +212,126 @@ it("browser listeners capture globals without preventing default behavior and re
   target.dispatchEvent(event);
   expect(browser.client.getStats().queued).toBe(0);
 });
+
+it("times out even if a transport ignores abort and ignores a late response", async () => {
+  let resolve: (response: Response) => void = () => {};
+  const { client } = setup(
+    vi.fn(
+      () =>
+        new Promise<Response>((done) => {
+          resolve = done;
+        }),
+    ),
+  );
+  client.captureException(new Error("stalled"));
+  expect(await client.flush(10)).toBe(false);
+  resolve(new Response("{}", { status: 201 }));
+  await Promise.resolve();
+  expect(client.getStats()).toMatchObject({ queued: 1, sent: 0, retries: 1 });
+});
+
+it("reports bounded delivery diagnostics without payloads or recursive errors", async () => {
+  const diagnostics: unknown[] = [];
+  const client = new ErrorClient({
+    ...options,
+    maxQueueSize: 1,
+    onDiagnostic: (diagnostic) => {
+      diagnostics.push(diagnostic);
+      client.captureException(
+        new Error("diagnostic callback must not report itself"),
+      );
+      throw new Error("diagnostic failure");
+    },
+    fetch: vi.fn().mockResolvedValue(new Response("", { status: 400 })),
+  });
+  clients.push(client);
+  client.captureException(new Error("private application data"));
+  client.captureException(new Error("overflow"));
+  await client.flush();
+  expect(client.getStats()).toMatchObject({
+    dropped: 2,
+    queued: 0,
+    droppedByReason: { queue_full: 1, rejected: 1 },
+  });
+  expect(diagnostics).toHaveLength(2);
+  expect(JSON.stringify(diagnostics)).not.toContain("application data");
+  expect(() => new ErrorClient({ ...options, maxQueueSize: NaN })).toThrow(
+    "maxQueueSize",
+  );
+});
+
+it("close aborts an in-flight request and accounts for its event exactly once", async () => {
+  const { client, fetch } = setup(vi.fn(() => new Promise<Response>(() => {})));
+  client.captureException(new Error("closing"));
+  const flushing = client.flush(10000);
+  client.close();
+  expect(await flushing).toBe(true);
+  expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+  expect(client.getStats()).toMatchObject({
+    sent: 0,
+    dropped: 1,
+    retries: 0,
+    droppedByReason: { closed: 1 },
+  });
+});
+
+it("native required coverage fails explicitly and restores installed handlers", () => {
+  const previous = vi.fn();
+  let handler: GlobalErrorHandler = previous;
+  const remove = vi.fn();
+  const hooks = {
+    errorUtils: {
+      getGlobalHandler: () => handler,
+      setGlobalHandler: (next: GlobalErrorHandler) => {
+        handler = next;
+      },
+    },
+    appState: { addEventListener: () => ({ remove }) },
+    requireCoverage: ["globalErrors", "unhandledRejections"] as (
+      "globalErrors" | "unhandledRejections"
+    )[],
+  };
+  expect(() => installReactNativeErrors(options, hooks)).toThrow(
+    "unhandledRejections",
+  );
+  expect(handler).toBe(previous);
+  expect(remove).toHaveBeenCalledOnce();
+  expect(() =>
+    installReactNativeErrors(options, {
+      ...hooks,
+      subscribeUnhandledRejection: () => {
+        throw new Error("runtime hook failed");
+      },
+    }),
+  ).toThrow("runtime hook failed");
+  expect(handler).toBe(previous);
+});
+
+it("native fatal errors start delivery before invoking the existing crash handler", async () => {
+  const order: string[] = [];
+  let handler: GlobalErrorHandler = () => {
+    order.push("crash");
+  };
+  const reporting = installReactNativeErrors(
+    {
+      ...options,
+      fetch: vi.fn(async () => {
+        order.push("send");
+        return new Response("{}", { status: 201 });
+      }),
+    },
+    {
+      errorUtils: {
+        getGlobalHandler: () => handler,
+        setGlobalHandler: (next) => {
+          handler = next;
+        },
+      },
+    },
+  );
+  clients.push(reporting.client);
+  handler(new Error("fatal"), true);
+  expect(order).toEqual(["send", "crash"]);
+  await reporting.client.flush();
+  reporting.dispose();
+});

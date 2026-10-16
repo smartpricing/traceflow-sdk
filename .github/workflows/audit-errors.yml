@@ -1,0 +1,35 @@
+name: Audit and client errors
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  javascript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: js/package-lock.json
+      - run: npm ci
+        working-directory: js
+      - run: npm run typecheck:errors && npx vitest run && npm run build:errors
+        working-directory: js
+  laravel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select runner PHP 8.3
+        run: |
+          sudo update-alternatives --set php /usr/bin/php8.3
+          php -r 'exit(PHP_VERSION_ID >= 80300 && PHP_VERSION_ID < 80400 && extension_loaded("pdo_sqlite") ? 0 : 1);'
+      - run: composer install --no-interaction --prefer-dist
+        working-directory: php/laravel
+      - run: vendor/bin/phpunit --testsuite=Unit
+        working-directory: php/laravel

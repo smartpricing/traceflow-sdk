@@ -40,6 +40,7 @@ import { NullTransport } from './transports/null-transport';
 import { Logger } from './logger';
 import { createTraceEvent } from './event-factory';
 import { ensureValidUuid } from './validate-uuid';
+import { AuditClient, AuditInput, AuditReceipt } from './audit';
 
 /**
  * Main SDK class for TraceFlow distributed tracing
@@ -55,6 +56,9 @@ import { ensureValidUuid } from './validate-uuid';
  * @public
  */
 export class TraceFlowSDK {
+  /** Audit always reports delivery failures, even when tracing uses silentErrors. */
+  get audit(): AuditClient { return new AuditClient(this.config); }
+  recordAudit(input: AuditInput): Promise<AuditReceipt> { return this.audit.recordAudit(input); }
   private config: TraceFlowSDKConfig;
   private transport: TraceTransport;
   private contextManager: ContextManager;

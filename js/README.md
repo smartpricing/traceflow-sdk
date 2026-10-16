@@ -1,7 +1,8 @@
-# Traceflow SDK for Node.js
+# Traceflow JavaScript SDK
 
-Trace, step, log and audit clients for Node.js backends. The package uses Node
-APIs and is not a browser or React Native client.
+The root entry point provides trace, step, log and audit clients for Node.js.
+Browser and React Native error reporting use separate entry points that avoid
+Node dependencies. See [frontend error setup](ERRORS.md).
 
 ## Install
 

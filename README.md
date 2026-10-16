@@ -1,20 +1,19 @@
-# TraceFlow SDK
+# Traceflow SDKs
 
-Production-ready, stateless SDKs for distributed tracing with TraceFlow.
+Clients for [Traceflow](https://github.com/smartpricing/traceflow-service).
 
-## SDKs
+| SDK | Package | Documentation |
+| --- | --- | --- |
+| Node.js / TypeScript | `@dev.smartpricing/traceflow-sdk` | [js/README.md](js/README.md) |
+| PHP / Laravel | `smartness/traceflow-laravel` | [php/laravel/README.md](php/laravel/README.md) |
+| Go | `github.com/smartpricing/traceflow-sdk/go` | [go/README.md](go/README.md) |
+| Java | See module configuration | [java/core/README.md](java/core/README.md) |
 
-| Language | Directory | Package |
-|----------|-----------|---------|
-| **JavaScript / TypeScript** | [`js/`](./js/) | `@dev.smartpricing/traceflow-sdk` |
-| **PHP / Laravel** | [`php/`](./php/) | `smartpricing/traceflow-sdk` |
-| **Java** | [`java/`](./java/) | — |
-| **Go** | [`go/`](./go/) | `github.com/smartpricing/traceflow-sdk/go` |
+Native audit logging is implemented in the Node and Laravel SDKs. Laravel includes
+model capture and a transactional outbox. See each package's README for setup,
+supported transports and tests.
 
-## Quick Links
-
-- [JS/TS SDK Documentation](./js/README.md)
-- [PHP/Laravel SDK](./php/)
-- [Java SDK](./java/)
-- [Go SDK](./go/README.md)
-- [TraceFlow Service](https://github.com/smartpricing/traceflow-service)
+The Laravel package is published from the
+[split repository](https://github.com/smartpricing/traceflow-laravel).
+Package versions and release workflows are separate; merging code here does not
+publish every SDK.

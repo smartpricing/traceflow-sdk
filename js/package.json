@@ -7,14 +7,18 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "bin",
+    "ERRORS.md"
   ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest",
     "typecheck": "tsc --noEmit",
-    "release": "commit-and-tag-version"
+    "release": "commit-and-tag-version",
+    "test:errors": "vitest run src/__tests__/errors.test.ts",
+    "typecheck:errors": "tsc -p tsconfig.errors.json"
   },
   "repository": {
     "type": "git",
@@ -38,15 +42,20 @@
     "uuid": "^13.0.0"
   },
   "peerDependencies": {
-    "@confluentinc/kafka-javascript": "^1.6.0"
+    "@confluentinc/kafka-javascript": "^1.6.0",
+    "react": ">=18"
   },
   "peerDependenciesMeta": {
     "@confluentinc/kafka-javascript": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     }
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
+    "@types/react": "^19.3.0",
     "@types/uuid": "^9.0.7",
     "commit-and-tag-version": "^12.7.3",
     "tsup": "^8.5.1",
@@ -59,5 +68,36 @@
   "overrides": {
     "esbuild": "^0.28.1",
     "brace-expansion": "^5.0.8"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.mjs",
+      "require": "./dist/browser.js"
+    },
+    "./react-native": {
+      "types": "./dist/react-native.d.ts",
+      "import": "./dist/react-native.mjs",
+      "require": "./dist/react-native.js"
+    },
+    "./nuxt": {
+      "types": "./dist/nuxt.d.ts",
+      "import": "./dist/nuxt.mjs",
+      "require": "./dist/nuxt.js"
+    },
+    "./package.json": "./package.json",
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.mjs",
+      "require": "./dist/react.js"
+    }
+  },
+  "bin": {
+    "traceflow-upload-map": "bin/traceflow-upload-map.mjs"
   }
 }

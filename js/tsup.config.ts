@@ -2,7 +2,7 @@ import { defineConfig } from "tsup";
 import { execSync } from "child_process";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/browser.ts", "src/react-native.ts", "src/nuxt.ts", "src/react.ts"],
   clean: true,
   format: ["cjs", "esm"],
   dts: true,

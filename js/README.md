@@ -1,7 +1,8 @@
-# Traceflow SDK for Node.js
+# Traceflow JavaScript SDK
 
-Trace, step, log and audit clients for Node.js backends. The package uses Node
-APIs and is not a browser or React Native client.
+The root entry point provides trace, step, log and audit clients for Node.js.
+Browser and React Native error reporting use separate entry points that avoid
+Node dependencies. See [frontend error setup](ERRORS.md).
 
 ## Install
 
@@ -154,3 +155,10 @@ Building declarations also requires the optional Kafka package's types, even
 when the application uses HTTP.
 
 License: ISC.
+
+## Frontend errors
+
+Use `/browser`, `/nuxt` or `/react-native` to capture JavaScript errors, context
+and breadcrumbs without Node/Kafka dependencies. `/react` provides an error
+boundary. See [setup and delivery behavior](ERRORS.md) for public ingestion keys,
+source-map uploads, runtime coverage and examples.

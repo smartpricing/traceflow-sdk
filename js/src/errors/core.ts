@@ -1,0 +1,432 @@
+export type Json =
+  null | boolean | number | string | Json[] | { [key: string]: Json };
+export interface ErrorFrame {
+  filename: string;
+  function?: string;
+  line: number;
+  column: number;
+}
+export interface Breadcrumb {
+  timestamp: string;
+  category: string;
+  message: string;
+  data?: Record<string, Json>;
+}
+export interface ClientErrorEvent {
+  schema_version: 1;
+  kind: "client.error";
+  event_id: string;
+  occurred_at: string;
+  source: string;
+  environment: string;
+  platform: "browser" | "react-native";
+  release: string;
+  dist: string;
+  exception: {
+    type: string;
+    message: string;
+    stack: string;
+    frames: ErrorFrame[];
+  };
+  mechanism:
+    "manual" | "error" | "unhandledrejection" | "vue" | "nuxt" | "react-native";
+  handled: boolean;
+  context: Record<string, Json>;
+  breadcrumbs: Breadcrumb[];
+}
+export interface ErrorClientOptions {
+  endpoint: string;
+  ingestKey: string;
+  source: string;
+  environment: string;
+  release: string;
+  dist: string;
+  platform: ClientErrorEvent["platform"];
+  context?: Record<string, unknown>;
+  beforeSend?: (event: ClientErrorEvent) => ClientErrorEvent | null;
+  fetch?: typeof fetch;
+  maxQueueSize?: number;
+  sampleRate?: number;
+}
+export interface CaptureOptions {
+  mechanism?: ClientErrorEvent["mechanism"];
+  handled?: boolean;
+  context?: Record<string, unknown>;
+  frames?: ErrorFrame[];
+}
+export function cleanUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return url.origin === "null"
+      ? value.split(/[?#]/, 1)[0]
+      : url.origin + url.pathname;
+  } catch {
+    return value.split(/[?#]/, 1)[0];
+  }
+}
+const secret =
+  /password|passwd|secret|token|authorization|cookie|api.?key|credit.?card|email/i;
+export function sanitize(
+  value: unknown,
+  depth = 0,
+  seen = new WeakSet<object>(),
+): Json {
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "number")
+    return Number.isFinite(value) ? value : String(value);
+  if (typeof value === "string")
+    return value.slice(0, 2000).replace(/https?:\/\/[^\s)]+/g, cleanUrl);
+  if (depth >= 6) return "[Truncated]";
+  if (typeof value !== "object" || !value) return String(value).slice(0, 200);
+  if (seen.has(value)) return "[Circular]";
+  seen.add(value);
+  try {
+    if (Array.isArray(value))
+      return value.slice(0, 30).map((v) => sanitize(v, depth + 1, seen));
+    const result: Record<string, Json> = Object.create(null);
+    for (const key of Object.keys(value).slice(0, 30)) {
+      if (secret.test(key)) {
+        result[key.slice(0, 100)] = "[Filtered]";
+        continue;
+      }
+      try {
+        result[key.slice(0, 100)] = sanitize(
+          (value as Record<string, unknown>)[key],
+          depth + 1,
+          seen,
+        );
+      } catch {
+        result[key.slice(0, 100)] = "[Unreadable]";
+      }
+    }
+    return result;
+  } finally {
+    seen.delete(value);
+  }
+}
+export function parseStack(stack: string): ErrorFrame[] {
+  const frames: ErrorFrame[] = [];
+  for (const raw of stack.split("\n").slice(0, 150)) {
+    let line = raw.trim();
+    const hermes = line.includes("address at ");
+    line = line.replace(/^at\s+/, "").replace(/address at /, "");
+    const match = /^(.*?):(\d+):(\d+)\)?$/.exec(line);
+    if (!match) continue;
+    let filename = match[1],
+      name = "";
+    const paren = filename.lastIndexOf(" (");
+    if (paren >= 0) {
+      name = filename.slice(0, paren);
+      filename = filename.slice(paren + 2);
+    } else {
+      const at = filename.indexOf("@");
+      if (at >= 0 && !filename.startsWith("http")) {
+        name = filename.slice(0, at);
+        filename = filename.slice(at + 1);
+      }
+    }
+    if (
+      filename.includes("InternalBytecode") ||
+      !filename ||
+      Number(match[2]) < 1
+    )
+      continue;
+    frames.push({
+      filename: cleanUrl(filename).slice(0, 2048),
+      ...(name ? { function: name.slice(0, 500) } : {}),
+      line: Number(match[2]),
+      column: Math.max(0, Number(match[3]) - (hermes ? 0 : 1)),
+    });
+    if (frames.length === 100) break;
+  }
+  return frames;
+}
+function uuid(): string {
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues)
+    globalThis.crypto.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  return Array.from(
+    bytes,
+    (b, i) =>
+      ([4, 6, 8, 10].includes(i) ? "-" : "") + b.toString(16).padStart(2, "0"),
+  ).join("");
+}
+type Pending = {
+  body: string;
+  attempts: number;
+  next: number;
+  created: number;
+};
+export class ErrorClient {
+  private queue: Pending[] = [];
+  private context: Record<string, unknown>;
+  private breadcrumbs: Breadcrumb[] = [];
+  private seen = new WeakMap<object, { id: string; at: number }>();
+  private timer?: ReturnType<typeof setTimeout>;
+  private sending?: Promise<void>;
+  private closed = false;
+  private capturing = false;
+  private readonly send: typeof fetch;
+  private readonly maxQueue: number;
+  private readonly stats = { sent: 0, dropped: 0, retries: 0 };
+  constructor(private readonly options: ErrorClientOptions) {
+    for (const key of [
+      "source",
+      "environment",
+      "release",
+      "dist",
+      "ingestKey",
+    ] as const) {
+      if (!options[key]?.trim() || options[key].length > 200)
+        throw new Error(`Invalid Traceflow ${key}`);
+    }
+    const endpoint = new URL(options.endpoint);
+    if (
+      !["http:", "https:"].includes(endpoint.protocol) ||
+      endpoint.username ||
+      endpoint.password ||
+      endpoint.search ||
+      endpoint.hash
+    )
+      throw new Error("Invalid Traceflow error endpoint");
+    if (
+      options.sampleRate !== undefined &&
+      (!Number.isFinite(options.sampleRate) ||
+        options.sampleRate < 0 ||
+        options.sampleRate > 1)
+    )
+      throw new Error("sampleRate must be between 0 and 1");
+    this.send = options.fetch ?? globalThis.fetch.bind(globalThis);
+    this.maxQueue = Math.max(1, Math.min(100, options.maxQueueSize ?? 30));
+    this.context = { session_id: uuid(), ...options.context };
+  }
+  setContext(context: Record<string, unknown>): void {
+    this.context = { ...this.context, ...context };
+  }
+  clearContext(): void {
+    this.context = { session_id: uuid() };
+    this.breadcrumbs = [];
+  }
+  addBreadcrumb(input: {
+    category: string;
+    message: string;
+    data?: Record<string, unknown>;
+  }): void {
+    try {
+      this.breadcrumbs.push({
+        timestamp: new Date().toISOString(),
+        category: input.category.trim().slice(0, 200) || "app",
+        message: String(sanitize(input.message)).slice(0, 1000),
+        ...(input.data
+          ? { data: sanitize(input.data) as Record<string, Json> }
+          : {}),
+      });
+      this.breadcrumbs = this.breadcrumbs.slice(-50);
+    } catch {
+      /* Diagnostic context must not break the application. */
+    }
+  }
+  captureException(
+    error: unknown,
+    capture: CaptureOptions = {},
+  ): string | undefined {
+    if (this.closed || this.capturing) return;
+    this.capturing = true;
+    try {
+      const now = Date.now();
+      if (error && typeof error === "object") {
+        const previous = this.seen.get(error);
+        if (previous && now - previous.at < 1000) return previous.id;
+      }
+      if (Math.random() >= (this.options.sampleRate ?? 1)) {
+        this.stats.dropped++;
+        return;
+      }
+      const object =
+        error && typeof error === "object"
+          ? (error as { name?: unknown; message?: unknown; stack?: unknown })
+          : null;
+      const stack = (typeof object?.stack === "string" ? object.stack : "")
+        .slice(0, 24000)
+        .replace(/https?:\/\/[^\s)]+/g, (value) => {
+          // Preserve :line:column after stripping query values from a script URL.
+          const position = /(:\d+:\d+)$/.exec(value)?.[1] ?? "";
+          return (
+            cleanUrl(position ? value.slice(0, -position.length) : value) +
+            position
+          );
+        });
+      let event: ClientErrorEvent | null = {
+        schema_version: 1,
+        kind: "client.error",
+        event_id: uuid(),
+        occurred_at: new Date(now).toISOString(),
+        source: this.options.source,
+        environment: this.options.environment,
+        release: this.options.release,
+        dist: this.options.dist,
+        platform: this.options.platform,
+        exception: {
+          type:
+            (typeof object?.name === "string" ? object.name : "Error").slice(
+              0,
+              200,
+            ) || "Error",
+          message: String(
+            sanitize(
+              typeof object?.message === "string" ? object.message : error,
+            ),
+          ).slice(0, 4000),
+          stack,
+          frames: capture.frames ?? parseStack(stack),
+        },
+        mechanism: capture.mechanism ?? "manual",
+        handled: capture.handled ?? true,
+        context: sanitize({ ...this.context, ...capture.context }) as Record<
+          string,
+          Json
+        >,
+        breadcrumbs: this.breadcrumbs.map((b) => ({ ...b })),
+      };
+      if (this.options.beforeSend) event = this.options.beforeSend(event);
+      if (!event) {
+        this.stats.dropped++;
+        return;
+      }
+      const body = JSON.stringify(event);
+      // Conservative UTF-8 bound without relying on TextEncoder in React Native.
+      const bytes = encodeURIComponent(body).replace(
+        /%[A-F\d]{2}/g,
+        "_",
+      ).length;
+      if (bytes > 60000 || this.queue.length >= this.maxQueue) {
+        this.stats.dropped++;
+        return;
+      }
+      this.queue.push({ body, attempts: 0, next: now, created: now });
+      if (error && typeof error === "object")
+        this.seen.set(error, { id: event.event_id, at: now });
+      this.schedule();
+      return event.event_id;
+    } catch {
+      this.stats.dropped++;
+      return;
+    } finally {
+      this.capturing = false;
+    }
+  }
+  private schedule(): void {
+    if (this.closed || this.timer || !this.queue.length) return;
+    this.timer = setTimeout(
+      () => {
+        this.timer = undefined;
+        void this.flush(5000);
+      },
+      Math.max(50, this.queue[0].next - Date.now()),
+    );
+    (this.timer as unknown as { unref?: () => void }).unref?.();
+  }
+  async flush(timeoutMs = 2000): Promise<boolean> {
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    while (!this.closed && this.queue.length && Date.now() < deadline) {
+      if (this.sending) {
+        await Promise.race([
+          this.sending,
+          new Promise<void>((resolve) =>
+            setTimeout(resolve, Math.max(0, deadline - Date.now())),
+          ),
+        ]);
+        continue;
+      }
+      const pending = this.queue[0];
+      if (pending.next > Date.now()) break;
+      this.sending = this.deliver(
+        pending,
+        Math.min(5000, deadline - Date.now()),
+      );
+      try {
+        await this.sending;
+      } finally {
+        this.sending = undefined;
+      }
+    }
+    this.schedule();
+    return this.queue.length === 0;
+  }
+  private async deliver(pending: Pending, timeoutMs: number): Promise<void> {
+    if (Date.now() - pending.created > 300000) {
+      this.queue.shift();
+      this.stats.dropped++;
+      return;
+    }
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), timeoutMs);
+    let retryAfter = 0;
+    try {
+      const response = await this.send(this.options.endpoint, {
+        method: "POST",
+        body: pending.body,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Traceflow-Ingest-Key": this.options.ingestKey,
+        },
+        signal: abort.signal,
+        ...(this.options.platform === "browser"
+          ? { keepalive: true, credentials: "omit" as const }
+          : {}),
+      });
+      if (response.ok) {
+        this.queue.shift();
+        this.stats.sent++;
+        return;
+      }
+      if (
+        response.status !== 429 &&
+        response.status < 500 &&
+        response.status !== 408
+      ) {
+        this.queue.shift();
+        this.stats.dropped++;
+        return;
+      }
+      const header = response.headers.get("Retry-After");
+      if (header)
+        retryAfter = /^\d+$/.test(header)
+          ? Number(header) * 1000
+          : Math.max(0, Date.parse(header) - Date.now());
+    } catch {
+      /* The transport cannot recursively capture its own failures. */
+    } finally {
+      clearTimeout(timer);
+    }
+    pending.attempts++;
+    if (pending.attempts >= 5) {
+      this.queue.shift();
+      this.stats.dropped++;
+      return;
+    }
+    pending.next =
+      Date.now() +
+      Math.max(
+        Number.isFinite(retryAfter) ? retryAfter : 0,
+        Math.min(30000, 1000 * 2 ** (pending.attempts - 1)),
+      );
+    this.stats.retries++;
+  }
+  getStats() {
+    return { ...this.stats, queued: this.queue.length };
+  }
+  close(): void {
+    this.closed = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.stats.dropped += this.queue.length;
+    this.queue = [];
+  }
+}

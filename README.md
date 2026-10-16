@@ -17,3 +17,6 @@ The Laravel package is published from the
 [split repository](https://github.com/smartpricing/traceflow-laravel).
 Package versions and release workflows are separate; merging code here does not
 publish every SDK.
+
+Frontend error reporting is available through the JS package's browser, Nuxt and
+React Native entry points. See [client error setup](js/ERRORS.md).

@@ -154,3 +154,10 @@ Building declarations also requires the optional Kafka package's types, even
 when the application uses HTTP.
 
 License: ISC.
+
+## Frontend errors
+
+Use `/browser`, `/nuxt` or `/react-native` to capture JavaScript errors, context
+and breadcrumbs without Node/Kafka dependencies. `/react` provides an error
+boundary. See [setup and delivery behavior](ERRORS.md) for public ingestion keys,
+source-map uploads, runtime coverage and examples.

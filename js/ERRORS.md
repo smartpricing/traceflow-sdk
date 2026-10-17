@@ -26,7 +26,10 @@ try {
 }
 ```
 
-Install once, early in application startup. Global errors and unhandled promise
+Install once, early in application startup. A second `installBrowserErrors` call
+on the same window returns the existing installation instead of duplicating
+listeners; dispose it first to reinstall with different options. Calling it where
+no `window` exists throws. Global errors and unhandled promise
 rejections are captured without suppressing the browser's handlers. Page URLs,
 user agent and language are included; query strings, fragments and URL credentials
 are removed. Popstate/hash changes add navigation breadcrumbs. No form values,
@@ -117,12 +120,19 @@ value in free text. The hook is synchronous; a thrown exception drops that event
 `sampleRate` is 0–1, default 1, and sampling happens before queueing.
 
 The in-memory queue holds 30 events by default (`maxQueueSize`, maximum 100).
-Events exceeding 60 KB or a full queue are dropped. Delivery retries network
-failures, `408`, `429` and `5xx` up to five attempts, preserving exact bytes and ID.
-It respects `Retry-After` and uses exponential backoff. Events older than five
-minutes are discarded; other `4xx` responses are terminal. `getStats()` returns
+An event above 60 KB first loses its breadcrumbs, then its context and most of
+its raw stack; `context.truncated` records what was removed. Only an exception
+that is still too large is dropped. A full queue drops the new event. Frames
+passed to `captureException` are validated and limited to 100 entries. Delivery
+retries network failures, `408`, `429` and `5xx` up to five attempts, preserving
+exact bytes and ID. It respects `Retry-After` and uses exponential backoff.
+Events older than five minutes are discarded; other `4xx` responses are terminal.
+A `401` or `403` means the key or origin is rejected for every event: queued
+events are dropped and capture pauses for one minute, doubling up to 32 minutes
+while rejections continue (`getStats().paused`, diagnostic type `paused`). The
+pause ends on its own; fix the ingestion key or origin configuration. `getStats()` returns
 sent, dropped, retried and queued counts, plus `droppedByReason`. An optional
-`onDiagnostic` callback reports drops and retries without event payloads. Its
+`onDiagnostic` callback reports drops, retries and pauses without event payloads. Its
 exceptions are ignored and error capture inside that callback is suppressed to
 avoid recursion. Use a separate health channel to monitor delivery losses. No delivery failure creates another
 telemetry error. Browser visibility changes request a flush with `keepalive`. Flush deadlines

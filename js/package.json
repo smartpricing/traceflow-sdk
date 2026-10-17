@@ -70,6 +70,14 @@
     "esbuild": "^0.28.1",
     "brace-expansion": "^5.0.8"
   },
+  "typesVersions": {
+    "*": {
+      "browser": ["./dist/browser.d.ts"],
+      "react-native": ["./dist/react-native.d.ts"],
+      "nuxt": ["./dist/nuxt.d.ts"],
+      "react": ["./dist/react.d.ts"]
+    }
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

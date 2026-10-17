@@ -2,10 +2,34 @@ import { ErrorClient, cleanUrl } from "./errors/core";
 import type { ErrorClientOptions } from "./errors/core";
 export * from "./errors/core";
 
+export interface BrowserErrorReporting {
+  client: ErrorClient;
+  dispose(): void;
+}
+const installations = new WeakMap<object, BrowserErrorReporting>();
+/**
+ * Installs once per window. A second call (hot module replacement, a plugin
+ * registered twice) returns the existing installation instead of duplicating
+ * listeners and deliveries. Dispose it first to reinstall with new options.
+ */
 export function installBrowserErrors(
   options: Omit<ErrorClientOptions, "platform">,
-  target: Window = window,
-) {
+  target?: Window,
+): BrowserErrorReporting {
+  const resolved =
+    target ?? (typeof window === "undefined" ? undefined : window);
+  if (!resolved)
+    throw new Error(
+      "installBrowserErrors requires a window; call it from client-only code",
+    );
+  const existing = installations.get(resolved);
+  if (existing) return existing;
+  return install(options, resolved);
+}
+function install(
+  options: Omit<ErrorClientOptions, "platform">,
+  target: Window,
+): BrowserErrorReporting {
   const client = new ErrorClient({ ...options, platform: "browser" });
   const page = () => {
     client.setContext({
@@ -66,9 +90,10 @@ export function installBrowserErrors(
   target.addEventListener("hashchange", onNavigation);
   target.addEventListener("online", onOnline);
   target.document.addEventListener("visibilitychange", onHidden);
-  return {
+  const reporting: BrowserErrorReporting = {
     client,
     dispose() {
+      if (installations.get(target) === reporting) installations.delete(target);
       target.removeEventListener("error", onError);
       target.removeEventListener("unhandledrejection", onRejection);
       target.removeEventListener("popstate", onNavigation);
@@ -78,4 +103,6 @@ export function installBrowserErrors(
       client.close();
     },
   };
+  installations.set(target, reporting);
+  return reporting;
 }

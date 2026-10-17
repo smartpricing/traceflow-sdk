@@ -43,13 +43,21 @@ export type DropReason =
   | "expired"
   | "rejected"
   | "retry_exhausted"
+  | "paused"
   | "closed";
 export interface ErrorDiagnostic {
-  type: "dropped" | "retry";
+  type: "dropped" | "retry" | "paused";
   reason?: DropReason;
   status?: number;
+  /** For `paused`: epoch milliseconds when capture resumes. */
+  until?: number;
   queued: number;
 }
+/** Server body limit is 64 KiB; keep a margin for headers and encoding. */
+const MAX_EVENT_BYTES = 60000;
+const MAX_FRAMES = 100;
+/** Pause lengths after a rejected key or origin: 1, 2, 4, 8, 16, 32 minutes. */
+const MAX_AUTH_FAILURES = 6;
 export interface ErrorClientOptions {
   endpoint: string;
   ingestKey: string;
@@ -155,9 +163,40 @@ export function parseStack(stack: string): ErrorFrame[] {
       line: Number(match[2]),
       column: Math.max(0, Number(match[3]) - (hermes ? 0 : 1)),
     });
-    if (frames.length === 100) break;
+    if (frames.length === MAX_FRAMES) break;
   }
   return frames;
+}
+/** Caller-supplied frames are untrusted input: apply the server contract before queueing. */
+export function normalizeFrames(frames: unknown): ErrorFrame[] | undefined {
+  if (!Array.isArray(frames)) return undefined;
+  const result: ErrorFrame[] = [];
+  for (const frame of frames as Partial<ErrorFrame>[]) {
+    if (
+      !frame ||
+      typeof frame.filename !== "string" ||
+      !frame.filename ||
+      !Number.isInteger(frame.line) ||
+      (frame.line as number) < 1 ||
+      !Number.isInteger(frame.column) ||
+      (frame.column as number) < 0
+    )
+      continue;
+    result.push({
+      filename: cleanUrl(frame.filename).slice(0, 2048),
+      ...(typeof frame.function === "string" && frame.function
+        ? { function: frame.function.slice(0, 500) }
+        : {}),
+      line: Math.min(frame.line as number, 10000000),
+      column: Math.min(frame.column as number, 100000000),
+    });
+    if (result.length === MAX_FRAMES) break;
+  }
+  return result;
+}
+/** Conservative UTF-8 bound without relying on TextEncoder in React Native. */
+function utf8Length(value: string): number {
+  return encodeURIComponent(value).replace(/%[A-F\d]{2}/g, "_").length;
 }
 function uuid(): string {
   const bytes = new Uint8Array(16);
@@ -188,6 +227,8 @@ export class ErrorClient {
   private closed = false;
   private capturing = false;
   private reporting = false;
+  private pausedUntil = 0;
+  private authFailures = 0;
   private abort?: AbortController;
   private readonly droppedByReason: Partial<Record<DropReason, number>> = {};
   private readonly send: typeof fetch;
@@ -204,13 +245,12 @@ export class ErrorClient {
       if (!options[key]?.trim() || options[key].length > 200)
         throw new Error(`Invalid Traceflow ${key}`);
     }
-    const endpoint = new URL(options.endpoint);
+    // Pattern check instead of URL getters: React Native's built-in URL throws
+    // "not implemented" for several of them unless a polyfill is installed.
     if (
-      !["http:", "https:"].includes(endpoint.protocol) ||
-      endpoint.username ||
-      endpoint.password ||
-      endpoint.search ||
-      endpoint.hash
+      typeof options.endpoint !== "string" ||
+      options.endpoint.length > 2048 ||
+      !/^https?:\/\/[^\s/?#@]+(?:\/[^\s?#]*)?$/i.test(options.endpoint)
     )
       throw new Error("Invalid Traceflow error endpoint");
     if (
@@ -265,6 +305,10 @@ export class ErrorClient {
     this.capturing = true;
     try {
       const now = Date.now();
+      if (now < this.pausedUntil) {
+        this.drop("paused");
+        return;
+      }
       if (error && typeof error === "object") {
         const previous = this.seen.get(error);
         if (previous && now - previous.at < 1000) return previous.id;
@@ -309,7 +353,7 @@ export class ErrorClient {
             ),
           ).slice(0, 4000),
           stack,
-          frames: capture.frames ?? parseStack(stack),
+          frames: normalizeFrames(capture.frames) ?? parseStack(stack),
         },
         mechanism: capture.mechanism ?? "manual",
         handled: capture.handled ?? true,
@@ -324,14 +368,45 @@ export class ErrorClient {
         this.drop("filtered");
         return;
       }
-      const body = JSON.stringify(event);
-      // Conservative UTF-8 bound without relying on TextEncoder in React Native.
-      const bytes = encodeURIComponent(body).replace(
-        /%[A-F\d]{2}/g,
-        "_",
-      ).length;
-      if (bytes > 60000 || this.queue.length >= this.maxQueue) {
-        this.drop(bytes > 60000 ? "oversize" : "queue_full");
+      // beforeSend output is untrusted: re-apply the frame contract.
+      event = {
+        ...event,
+        exception: {
+          ...event.exception,
+          frames: normalizeFrames(event.exception.frames) ?? [],
+        },
+      };
+      let body = JSON.stringify(event);
+      if (utf8Length(body) > MAX_EVENT_BYTES && event.breadcrumbs.length) {
+        // Keep the exception; shed diagnostic context before dropping the event.
+        event = {
+          ...event,
+          breadcrumbs: [],
+          context: { ...event.context, truncated: "breadcrumbs" },
+        };
+        body = JSON.stringify(event);
+      }
+      if (utf8Length(body) > MAX_EVENT_BYTES) {
+        const session = event.context.session_id;
+        event = {
+          ...event,
+          context: {
+            ...(typeof session === "string" ? { session_id: session } : {}),
+            truncated: "context",
+          },
+          exception: {
+            ...event.exception,
+            stack: event.exception.stack.slice(0, 8000),
+          },
+        };
+        body = JSON.stringify(event);
+      }
+      if (utf8Length(body) > MAX_EVENT_BYTES) {
+        this.drop("oversize");
+        return;
+      }
+      if (this.queue.length >= this.maxQueue) {
+        this.drop("queue_full");
         return;
       }
       this.queue.push({ body, attempts: 0, next: now, created: now });
@@ -433,6 +508,7 @@ export class ErrorClient {
       if (response.ok) {
         this.queue.shift();
         this.stats.sent++;
+        this.authFailures = 0;
         return;
       }
       if (
@@ -442,6 +518,8 @@ export class ErrorClient {
       ) {
         this.queue.shift();
         this.drop("rejected", response.status);
+        if (response.status === 401 || response.status === 403)
+          this.pause(response.status);
         return;
       }
       const header = response.headers.get("Retry-After");
@@ -471,6 +549,23 @@ export class ErrorClient {
     this.stats.retries++;
     this.notify({ type: "retry", status, queued: this.queue.length });
   }
+  /**
+   * A rejected key or origin applies to every event from this client. Stop
+   * sending for a growing interval instead of repeating the same failure.
+   */
+  private pause(status: number) {
+    const count = this.queue.length;
+    this.queue = [];
+    if (count) this.drop("rejected", status, count);
+    this.authFailures = Math.min(MAX_AUTH_FAILURES, this.authFailures + 1);
+    this.pausedUntil = Date.now() + 60000 * 2 ** (this.authFailures - 1);
+    this.notify({
+      type: "paused",
+      status,
+      until: this.pausedUntil,
+      queued: 0,
+    });
+  }
   private notify(diagnostic: ErrorDiagnostic) {
     if (this.reporting) return;
     this.reporting = true;
@@ -491,6 +586,7 @@ export class ErrorClient {
     return {
       ...this.stats,
       queued: this.queue.length,
+      paused: Date.now() < this.pausedUntil,
       droppedByReason: { ...this.droppedByReason },
     };
   }

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ErrorClient, parseStack, sanitize } from "../errors/core";
+import type { ErrorDiagnostic } from "../errors/core";
 import {
   installReactNativeErrors,
   type GlobalErrorHandler,
@@ -334,4 +335,136 @@ it("native fatal errors start delivery before invoking the existing crash handle
   expect(order).toEqual(["send", "crash"]);
   await reporting.client.flush();
   reporting.dispose();
+});
+
+it("rejects endpoints with credentials, queries or non-HTTP schemes without URL getters", () => {
+  for (const endpoint of [
+    "https://u:p@host/x",
+    "https://host/x?y=1",
+    "https://host/x#f",
+    "ftp://host/x",
+    "host/x",
+  ])
+    expect(() => new ErrorClient({ ...options, endpoint })).toThrow(
+      "endpoint",
+    );
+  clients.push(
+    new ErrorClient({
+      ...options,
+      endpoint: "http://localhost:3009/api/v1/client-errors",
+    }),
+  );
+});
+
+it("pauses capture after a rejected key and resumes after the backoff", async () => {
+  const diagnostics: ErrorDiagnostic[] = [];
+  const fetch = vi.fn().mockResolvedValue(new Response("", { status: 401 }));
+  const client = new ErrorClient({
+    ...options,
+    fetch,
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+  });
+  clients.push(client);
+  client.captureException(new Error("one"));
+  client.captureException(new Error("two"));
+  await client.flush();
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(client.getStats()).toMatchObject({
+    paused: true,
+    queued: 0,
+    droppedByReason: { rejected: 2 },
+  });
+  expect(client.captureException(new Error("three"))).toBeUndefined();
+  expect(client.getStats().droppedByReason.paused).toBe(1);
+  expect(diagnostics.find((d) => d.type === "paused")).toMatchObject({
+    status: 401,
+    until: expect.any(Number),
+  });
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 61000);
+  fetch.mockResolvedValue(new Response("{}", { status: 201 }));
+  expect(client.captureException(new Error("four"))).toBeDefined();
+  await client.flush();
+  expect(client.getStats()).toMatchObject({ sent: 1, paused: false });
+});
+
+it("sheds breadcrumbs, then context and raw stack, before dropping an oversize event", async () => {
+  const { client, fetch } = setup();
+  for (let i = 0; i < 50; i++)
+    client.addBreadcrumb({ category: "log", message: "x".repeat(1000) });
+  client.setContext(
+    Object.fromEntries(
+      Array.from({ length: 10 }, (_, i) => [`k${i}`, "y".repeat(2000)]),
+    ),
+  );
+  client.captureException(new Error("big"));
+  await client.flush();
+  const first = JSON.parse(fetch.mock.calls[0][1].body);
+  expect(first.breadcrumbs).toEqual([]);
+  expect(first.context.truncated).toBe("breadcrumbs");
+  expect(first.context.k0).toHaveLength(2000);
+
+  client.clearContext();
+  client.setContext(
+    Object.fromEntries(
+      Array.from({ length: 30 }, (_, i) => [`k${i}`, "y".repeat(2000)]),
+    ),
+  );
+  const error = new Error("bigger");
+  error.stack =
+    "Error: bigger\n" + " at f (https://app.test/a.js:1:1)\n".repeat(900);
+  client.captureException(error);
+  await client.flush();
+  const second = JSON.parse(fetch.mock.calls[1][1].body);
+  expect(second.context).toEqual({
+    session_id: expect.any(String),
+    truncated: "context",
+  });
+  expect(second.exception.stack.length).toBeLessThanOrEqual(8000);
+  expect(second.exception.frames).toHaveLength(100);
+  expect(client.getStats().dropped).toBe(0);
+});
+
+it("normalizes caller-supplied frames to the server contract", async () => {
+  const { client, fetch } = setup();
+  const frames = Array.from({ length: 120 }, (_, i) => ({
+    filename: `https://app.test/a.js?v=${i}`,
+    line: i + 1,
+    column: i,
+  }));
+  client.captureException(new Error("frames"), {
+    frames: [
+      { filename: "", line: 1, column: 0 },
+      { filename: "x", line: 0, column: 0 },
+      ...frames,
+    ],
+  });
+  await client.flush();
+  const body = JSON.parse(fetch.mock.calls[0][1].body);
+  expect(body.exception.frames).toHaveLength(100);
+  expect(body.exception.frames[0]).toEqual({
+    filename: "https://app.test/a.js",
+    line: 1,
+    column: 0,
+  });
+});
+
+it("installs browser reporting once per window", () => {
+  const target = Object.assign(new EventTarget(), {
+    location: { href: "https://app.test/" },
+    document: Object.assign(new EventTarget(), {
+      visibilityState: "visible",
+    }),
+  }) as unknown as Window;
+  const first = installBrowserErrors({ ...options, fetch: vi.fn() }, target);
+  clients.push(first.client);
+  expect(installBrowserErrors({ ...options, fetch: vi.fn() }, target)).toBe(
+    first,
+  );
+  first.dispose();
+  const second = installBrowserErrors({ ...options, fetch: vi.fn() }, target);
+  clients.push(second.client);
+  expect(second).not.toBe(first);
+  second.dispose();
+  expect(() => installBrowserErrors(options)).toThrow("window");
 });

@@ -1,112 +1,84 @@
-# .github/workflows/beta.yml
 name: Release Deploy
 
 on:
   push:
-    branches:
-      - "release/**" # es. release/v1.2.3
+    branches: ["release/**"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version already committed in js/package.json (e.g. 2.8.0)'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    env:
-      REPOSITORY_NAME: traceflow-sdk
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: js
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          token: ${{ secrets.CI_CD_USER_ACCESS_KEY }}
-          persist-credentials: true
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: js/package-lock.json
 
-      - name: Cache dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('js/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Configure NPM for private packages
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NO_TWOFA_NPM_TOKEN }}" > ~/.npmrc
-
-      - name: Install & Build
-        working-directory: js
+      - name: Validate committed release version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
-          npm install --force
-          npm run build
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          const expected = process.env.REQUESTED_VERSION || process.env.GITHUB_REF_NAME.replace(/^release\//, '');
+          assert.match(expected, /^\d+\.\d+\.\d+$/);
+          assert.equal(pkg.version, expected, 'Commit the release version before building');
+          assert.equal(lock.version, expected);
+          assert.equal(lock.packages[''].version, expected);
+          NODE
 
-      - name: Conditional version bump & changelog
-        working-directory: js
+      - name: Check npm credentials
+        run: npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NO_TWOFA_NPM_TOKEN }}
+
+      # Kafka is needed only for its declarations; do not build its native addon.
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck:errors && npm test -- --run
+      - run: npm run build
+      - name: Verify the npm archive
+        run: npm run test:package -- "$RUNNER_TEMP/traceflow-sdk.tgz"
+
+      - name: Publish to npm
+        run: npm publish "$RUNNER_TEMP/traceflow-sdk.tgz" --tag latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NO_TWOFA_NPM_TOKEN }}
+
+      - name: Verify published version and archive
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NO_TWOFA_NPM_TOKEN }}
         run: |
-          git config --global user.email "ci@github.com"
-          git config --global user.name "GitHub Actions Bot"
-
-          if git log -1 --pretty=%B | grep -q "chore(release)"; then
-            echo "Version bump commit found, skipping release to avoid loop."
-          else
-            # Extract version from branch name (e.g. release/2.6.0 → 2.6.0)
-            BRANCH="${GITHUB_REF#refs/heads/}"
-            VERSION=$(echo "${BRANCH}" | sed -E 's/release\///')
-
-            echo "Running release step with version ${VERSION}..."
-            npm run release -- --release-as "${VERSION}" --releaseCommitMessageFormat "chore(release): bump version to %s [skip ci]"
-
-            git push --set-upstream origin HEAD || true
-            git push --follow-tags
-          fi
-
-      - name: Publish to NPM
-        working-directory: js
-        run: npm publish
-
-      - name: Merge release branch into develop
-        run: |
-          git config --global user.email "ci@github.com"
-          git config --global user.name "GitHub Actions Bot"
-
-          RELEASE_BRANCH="${GITHUB_REF#refs/heads/}"
-
-          if ! git ls-remote --exit-code --heads origin develop > /dev/null 2>&1; then
-            echo "Branch 'develop' does not exist. Skipping merge into develop."
-            exit 0
-          fi
-
-          git fetch --unshallow || true
-          git fetch origin develop "${RELEASE_BRANCH}"
-
-          git checkout develop
-          VERSION=$(echo "${RELEASE_BRANCH}" | sed -E 's/release\///')
-          echo "Merging release branch ${RELEASE_BRANCH} into develop (version ${VERSION})"
-          git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" || \
-            git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" --allow-unrelated-histories
-
-          git push origin develop
-
-      - name: Merge release branch into master
-        run: |
-          git config --global user.email "ci@github.com"
-          git config --global user.name "GitHub Actions Bot"
-
-          RELEASE_BRANCH="${GITHUB_REF#refs/heads/}"
-
-          if ! git ls-remote --exit-code --heads origin master > /dev/null 2>&1; then
-            echo "Branch 'master' does not exist. Skipping merge into master."
-            exit 0
-          fi
-
-          git fetch --unshallow || true
-          git fetch origin master "${RELEASE_BRANCH}"
-
-          git checkout master
-          VERSION=$(echo "${RELEASE_BRANCH}" | sed -E 's/release\///')
-          echo "Merging release branch ${RELEASE_BRANCH} into master (version ${VERSION})"
-          git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" || \
-            git merge --no-ff --no-edit -m "Finish ${VERSION}" -X theirs "origin/${RELEASE_BRANCH}" --allow-unrelated-histories
-
-          git push origin master
-
-      - name: Delete release branch
-        run: |
-          RELEASE_BRANCH="${GITHUB_REF#refs/heads/}"
-          echo "Deleting remote release branch: ${RELEASE_BRANCH}"
-          git push origin --delete "${RELEASE_BRANCH}" || true
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
+          import { createHash } from 'node:crypto';
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const published = JSON.parse(execFileSync('npm', ['view', `${pkg.name}@latest`, '--json'], { encoding: 'utf8' }));
+          assert.equal(published.version, pkg.version);
+          assert.deepEqual(published.exports, pkg.exports);
+          const integrity = 'sha512-' + createHash('sha512').update(readFileSync(`${process.env.RUNNER_TEMP}/traceflow-sdk.tgz`)).digest('base64');
+          assert.equal(published.dist.integrity, integrity);
+          console.log(`Verified ${pkg.name}@${pkg.version} on npm, including exports and archive integrity.`);
+          NODE

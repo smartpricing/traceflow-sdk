@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## 2.8.0 (2026-10-19)
+
+- Publish the `/browser`, `/react-native`, `/react`, and `/nuxt` entry points, with CommonJS, ESM, and TypeScript declarations.
+- Include frontend Error Monitoring, the React error boundary, and the source map upload CLI and integration guide.
+- Include the Node.js audit client and the SDK `enabled` flag already available on `main`.
+- Validate the complete npm archive before publishing, including isolated consumer imports and frontend bundles without Node/Kafka dependencies.
+- Allow manual releases from `main`, using the committed package version and verifying the published archive. Release branches must also contain the intended version before publishing.
+
 ## 2.3.4 (2026-02-28) - Remove Queue Integration
 
 ### Removed

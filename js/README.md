@@ -189,3 +189,33 @@ Building declarations also requires the optional Kafka package's types, even
 when the application uses HTTP.
 
 License: ISC.
+
+## Releasing (maintainers)
+
+Update `js/package.json`, `js/package-lock.json` and `js/CHANGELOG.md` together,
+then merge the release changes into `main`. Run the **Release Deploy** workflow
+with the committed version:
+
+```sh
+gh workflow run workflow.yaml --ref main -f version=2.8.0
+```
+
+The workflow tests and builds every entry point, installs and verifies the npm
+archive, then publishes that same archive using `NO_TWOFA_NPM_TOKEN`. It checks
+that npm's `latest` version, exports and archive integrity match the release.
+For the existing `release/X.Y.Z` branch flow, commit version `X.Y.Z` before
+pushing; the workflow no longer bumps versions or merges branches itself.
+
+To verify packaging locally, run from `js/`:
+
+```sh
+npm ci --ignore-scripts
+npm run typecheck:errors
+npm test -- --run
+npm run build
+npm run test:package
+```
+
+The Kafka development dependency supplies types for the full build; its native
+addon is not needed for these checks. React and Kafka remain optional peers for
+SDK consumers.

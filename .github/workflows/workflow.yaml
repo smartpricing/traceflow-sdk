@@ -54,8 +54,10 @@ jobs:
           registry-url: https://registry.npmjs.org
       # npm 11.21 supports private dist-tag reads through trusted publishing.
       - run: npm install --global npm@11.21.0
-      - name: Check trusted publisher access
+      - name: Check npm publishing access
         run: npm dist-tag ls @dev.smartpricing/traceflow-sdk --json
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || secrets.NO_TWOFA_NPM_TOKEN }}
 
       # Kafka is needed only for its declarations; do not build its native addon.
       - run: npm ci --ignore-scripts
@@ -64,11 +66,15 @@ jobs:
       - name: Verify the npm archive
         run: npm run test:package -- "$RUNNER_TEMP/traceflow-sdk.tgz"
 
-      - name: Publish to npm with trusted publishing
+      - name: Publish to npm
         run: npm publish "$RUNNER_TEMP/traceflow-sdk.tgz" --tag latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || secrets.NO_TWOFA_NPM_TOKEN }}
 
       - name: Verify published latest version
         # OIDC supports dist-tag, but npm view needs a separate read token for private packages.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || secrets.NO_TWOFA_NPM_TOKEN }}
         run: |
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';

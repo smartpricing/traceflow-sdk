@@ -9,6 +9,10 @@ on:
       version:
         description: 'Version already committed in js/package.json (e.g. 2.8.0)'
         required: true
+      verify_only:
+        description: 'Verify an already-published version without publishing again'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -55,18 +59,23 @@ jobs:
       # npm 11.21 supports private dist-tag reads through trusted publishing.
       - run: npm install --global npm@11.21.0
       - name: Check npm publishing access
-        run: npm dist-tag ls @dev.smartpricing/traceflow-sdk --json
+        run: npm dist-tag ls @dev.smartpricing/traceflow-sdk
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || secrets.NO_TWOFA_NPM_TOKEN }}
 
       # Kafka is needed only for its declarations; do not build its native addon.
       - run: npm ci --ignore-scripts
+        if: inputs.verify_only != true
       - run: npm run typecheck:errors && npm run test:release && npm test -- --run
+        if: inputs.verify_only != true
       - run: npm run build
+        if: inputs.verify_only != true
       - name: Verify the npm archive
+        if: inputs.verify_only != true
         run: npm run test:package -- "$RUNNER_TEMP/traceflow-sdk.tgz"
 
       - name: Publish to npm
+        if: inputs.verify_only != true
         run: npm publish "$RUNNER_TEMP/traceflow-sdk.tgz" --tag latest
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || secrets.NO_TWOFA_NPM_TOKEN }}
@@ -80,10 +89,11 @@ jobs:
           import assert from 'node:assert/strict';
           import { execFileSync } from 'node:child_process';
           import { appendFileSync, readFileSync } from 'node:fs';
+          import { readLatestVersion } from './scripts/release-version.mjs';
           const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-          const tags = JSON.parse(execFileSync('npm', ['dist-tag', 'ls', pkg.name, '--json'], { encoding: 'utf8' }));
-          assert.equal(tags.latest, pkg.version);
-          const message = `Published ${pkg.name}@${pkg.version}; npm latest verified. The published archive passed export, CJS/ESM import, and frontend bundle checks.`;
+          const tags = execFileSync('npm', ['dist-tag', 'ls', pkg.name], { encoding: 'utf8' });
+          assert.equal(readLatestVersion(tags), pkg.version);
+          const message = `Verified npm latest: ${pkg.name}@${pkg.version}.`;
           console.log(message);
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, message + '\n');
           NODE

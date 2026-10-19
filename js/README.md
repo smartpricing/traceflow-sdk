@@ -203,6 +203,13 @@ For recovery after a failed publish, run the workflow with the committed version
 gh workflow run workflow.yaml --ref main -f version=2.8.0
 ```
 
+If publishing succeeded and only the final check failed, verify the existing
+release without attempting to publish the same version again:
+
+```sh
+gh workflow run workflow.yaml --ref main -f version=2.8.0 -f verify_only=true
+```
+
 The workflow tests and builds every entry point, installs and verifies the npm
 archive, then publishes that same archive. It verifies npm's `latest` tag after
 publishing. The existing `release/X.Y.Z` flow is also supported: commit version

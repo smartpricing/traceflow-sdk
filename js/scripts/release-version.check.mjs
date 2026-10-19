@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { shouldRelease } from "./release-version.mjs";
+import { readLatestVersion, shouldRelease } from "./release-version.mjs";
+
+test("read the plain-text output returned by npm dist-tag ls", () => {
+  assert.equal(readLatestVersion("latest: 2.8.0\n"), "2.8.0");
+});
+
+test("select latest when the registry also contains other tags", () => {
+  assert.equal(readLatestVersion("beta: 3.0.0-beta.1\nlatest: 2.8.0\nnext: 2.9.0\n"), "2.8.0");
+});
+
+test("reject missing or invalid latest tags", () => {
+  for (const output of ["", "next: 2.8.0\n", "latest: \nnext: 2.8.0\n", "latest: invalid\n"]) {
+    assert.throws(() => readLatestVersion(output));
+  }
+});
 
 const main = { event: "push", branch: "main", version: "2.8.0", previous: "2.8.0" };
 

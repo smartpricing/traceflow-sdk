@@ -16,9 +16,10 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: js/package-lock.json
-      - run: npm ci
+      # Only Kafka's types are needed; avoid compiling the optional native addon.
+      - run: npm ci --ignore-scripts
         working-directory: js
-      - run: npm run typecheck:errors && npx vitest run && npm run build:errors
+      - run: npm run typecheck:errors && npx vitest run && npm run build && npm run test:package
         working-directory: js
   laravel:
     runs-on: ubuntu-24.04

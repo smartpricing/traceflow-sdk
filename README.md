@@ -4,7 +4,7 @@ Clients for [Traceflow](https://github.com/smartpricing/traceflow-service).
 
 | SDK | Package | Documentation |
 | --- | --- | --- |
-| JavaScript / TypeScript | `@dev.smartpricing/traceflow-sdk` | [Setup](js/README.md), [audit log](js/README.md#audit-log), [frontend errors](js/README.md#frontend-errors) |
+| JavaScript / TypeScript | `@dev.smartpricing/traceflow-sdk` | [Setup](js/README.md), [Audit Log](js/README.md#audit-log), [Error Monitoring](js/README.md#error-monitoring) |
 | PHP / Laravel | `smartness/traceflow-laravel` | [php/laravel/README.md](php/laravel/README.md) |
 | Go | `github.com/smartpricing/traceflow-sdk/go` | [go/README.md](go/README.md) |
 | Java | See module configuration | [java/core/README.md](java/core/README.md) |
@@ -18,5 +18,5 @@ The Laravel package is published from the
 Package versions and release workflows are separate; merging code here does not
 publish every SDK.
 
-Frontend error reporting is available through the JS package's browser, Nuxt and
-React Native entry points. See [client error setup](js/ERRORS.md).
+Traceflow Error Monitoring captures JavaScript errors from browser, Nuxt and
+React Native apps. See the [setup and integration guide](js/ERROR_MONITORING.md).

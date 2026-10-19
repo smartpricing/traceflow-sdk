@@ -1,6 +1,6 @@
 # Traceflow JavaScript SDK
 
-[Tracing](#tracing) · [Audit log](#audit-log) · [Frontend errors](#frontend-errors)
+[Tracing](#tracing) · [Audit Log](#audit-log) · [Error Monitoring](#error-monitoring)
 
 ## Install
 
@@ -59,7 +59,7 @@ HTTP middleware is available as
 [`traceflowFastifyPlugin`](src/middleware/fastify.ts). Both accept `ignorePaths`.
 Full method and option types are in [src/types.ts](src/types.ts).
 
-## Audit log
+## Audit Log
 
 Record changes from your Node.js backend. The client sends the values you supply;
 it does not observe your database automatically. Audit uses HTTP and needs no trace.
@@ -125,10 +125,12 @@ is 256 KiB with a maximum JSON depth of 32. See [audit types](src/audit.ts) for
 optional context fields and [the backend contract](https://github.com/smartpricing/traceflow-service#audit-log)
 for retention, responses and queries.
 
-## Frontend errors
+## Error Monitoring
 
-Install one adapter at startup. Errors appear in the dashboard with their context
-and breadcrumbs. Use `captureException()` for errors your application handles.
+Traceflow Error Monitoring captures errors from your web and mobile apps, groups
+occurrences and reconstructs stacks with source maps. Install one adapter at startup;
+use `captureException()` for handled errors. See the [integration guide](ERROR_MONITORING.md)
+for backend configuration, SDK options and troubleshooting.
 
 ### Browser
 
@@ -208,7 +210,7 @@ reporting.client.setContext({ screen: 'quote-editor' });
 ```
 
 `requireCoverage` throws if the global JS error hook is unavailable. Unhandled
-promise rejections need a runtime-specific hook: see [React Native setup](ERRORS.md#react-native).
+promise rejections need a runtime-specific hook: see [React Native setup](ERROR_MONITORING.md#react-native).
 Use a different `dist` for each Android/iOS build and OTA update. Native crashes
 are not captured.
 
@@ -233,10 +235,10 @@ npx traceflow-upload-map \
 Upload each chunk's map using its actual generated path. Source, environment,
 release, dist and platform must match the event. Keep `.map` files out of public
 hosting. For mobile, upload the matching composed Metro/Hermes map; see
-[source-map uploads](ERRORS.md#upload-source-maps).
+[source-map uploads](ERROR_MONITORING.md#upload-source-maps).
 
 The error queue is in memory: closing a tab or terminating an app can lose events.
-See [context and delivery](ERRORS.md#context-and-delivery) for redaction with
+See [context and delivery](ERROR_MONITORING.md#context-and-delivery) for redaction with
 `beforeSend`, logout cleanup, `flush()`, diagnostics and retry behavior.
 
 ## Configuration and delivery

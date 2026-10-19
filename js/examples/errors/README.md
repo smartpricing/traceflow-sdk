@@ -1,6 +1,6 @@
-# Error capture examples
+# Traceflow Error Monitoring examples
 
-Build the SDK first with `npm run build` in `js/`.
+Build the frontend SDK first with `npm run build:errors` in `js/`.
 
 The Nuxt example is a standalone application inside this repository:
 
@@ -24,7 +24,7 @@ capture. Each click should add one occurrence. Upload each map in
 dashboard after refreshing the occurrence. Do not serve these maps publicly in
 an application deployment.
 
-React Native setup is in [ERRORS.md](../../ERRORS.md). The adapter unit tests cover
+React Native setup is in [the integration guide](../../ERROR_MONITORING.md#react-native). The adapter unit tests cover
 ErrorUtils chaining, subscription cleanup, and Hermes/JSC/V8 stack coordinates.
 They do not replace release-build testing on the consuming app's iOS/Android
 engine and OTA configuration.

@@ -1,7 +1,7 @@
 {
   "name": "@dev.smartpricing/traceflow-sdk",
   "version": "2.4.0",
-  "description": "Stateless SDK for distributed tracing with HTTP and Kafka transport support",
+  "description": "Node.js tracing and audit logs, plus Traceflow Error Monitoring for browser and React Native apps",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -9,7 +9,7 @@
     "dist",
     "README.md",
     "bin",
-    "ERRORS.md"
+    "ERROR_MONITORING.md"
   ],
   "scripts": {
     "build": "tsup",
@@ -35,7 +35,10 @@
     "async",
     "traces",
     "steps",
-    "logs"
+    "logs",
+    "audit-log",
+    "error-monitoring",
+    "react-native"
   ],
   "author": "Andrei Borcea",
   "license": "ISC",

@@ -16,6 +16,7 @@
     "dev": "tsup --watch",
     "test": "vitest",
     "test:package": "node scripts/test-package.mjs",
+    "test:release": "node --test scripts/release-version.check.mjs",
     "typecheck": "tsc --noEmit",
     "release": "commit-and-tag-version",
     "test:errors": "vitest run src/__tests__/errors.test.ts",
@@ -24,7 +25,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "git@github.com-sp:smartpricing/traceflow-sdk.git"
+    "url": "git+https://github.com/smartpricing/traceflow-sdk.git",
+    "directory": "js"
   },
   "keywords": [
     "tracing",

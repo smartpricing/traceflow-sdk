@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file. See [standa
 - Include frontend Error Monitoring, the React error boundary, and the source map upload CLI and integration guide.
 - Include the Node.js audit client and the SDK `enabled` flag already available on `main`.
 - Validate the complete npm archive before publishing, including isolated consumer imports and frontend bundles without Node/Kafka dependencies.
-- Allow manual releases from `main`, using the committed package version and verifying the published archive. Release branches must also contain the intended version before publishing.
+- Publish automatically when the committed npm version increases on `main`, using GitHub OIDC trusted publishing; keep manual recovery and version-matched release branches.
 
 ## 2.3.4 (2026-02-28) - Remove Queue Integration
 

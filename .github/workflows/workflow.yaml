@@ -2,7 +2,8 @@ name: Release Deploy
 
 on:
   push:
-    branches: ["release/**"]
+    branches: [main, "release/**"]
+    paths: ["js/package.json"]
   workflow_dispatch:
     inputs:
       version:
@@ -17,9 +18,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      release: ${{ steps.version.outputs.release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect and validate release version
+        id: version
+        working-directory: js
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: node scripts/release-version.mjs
+
   build-and-deploy:
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: js
@@ -29,56 +52,32 @@ jobs:
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
-          cache: npm
-          cache-dependency-path: js/package-lock.json
-
-      - name: Validate committed release version
-        env:
-          REQUESTED_VERSION: ${{ inputs.version }}
-        run: |
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict';
-          import { readFileSync } from 'node:fs';
-          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
-          const expected = process.env.REQUESTED_VERSION || process.env.GITHUB_REF_NAME.replace(/^release\//, '');
-          assert.match(expected, /^\d+\.\d+\.\d+$/);
-          assert.equal(pkg.version, expected, 'Commit the release version before building');
-          assert.equal(lock.version, expected);
-          assert.equal(lock.packages[''].version, expected);
-          NODE
-
-      - name: Check npm credentials
-        run: npm whoami
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NO_TWOFA_NPM_TOKEN }}
+      # npm 11.21 supports private dist-tag reads through trusted publishing.
+      - run: npm install --global npm@11.21.0
+      - name: Check trusted publisher access
+        run: npm dist-tag ls @dev.smartpricing/traceflow-sdk --json
 
       # Kafka is needed only for its declarations; do not build its native addon.
       - run: npm ci --ignore-scripts
-      - run: npm run typecheck:errors && npm test -- --run
+      - run: npm run typecheck:errors && npm run test:release && npm test -- --run
       - run: npm run build
       - name: Verify the npm archive
         run: npm run test:package -- "$RUNNER_TEMP/traceflow-sdk.tgz"
 
-      - name: Publish to npm
+      - name: Publish to npm with trusted publishing
         run: npm publish "$RUNNER_TEMP/traceflow-sdk.tgz" --tag latest
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NO_TWOFA_NPM_TOKEN }}
 
-      - name: Verify published version and archive
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NO_TWOFA_NPM_TOKEN }}
+      - name: Verify published latest version
+        # OIDC supports dist-tag, but npm view needs a separate read token for private packages.
         run: |
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import { execFileSync } from 'node:child_process';
-          import { createHash } from 'node:crypto';
-          import { readFileSync } from 'node:fs';
+          import { appendFileSync, readFileSync } from 'node:fs';
           const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-          const published = JSON.parse(execFileSync('npm', ['view', `${pkg.name}@latest`, '--json'], { encoding: 'utf8' }));
-          assert.equal(published.version, pkg.version);
-          assert.deepEqual(published.exports, pkg.exports);
-          const integrity = 'sha512-' + createHash('sha512').update(readFileSync(`${process.env.RUNNER_TEMP}/traceflow-sdk.tgz`)).digest('base64');
-          assert.equal(published.dist.integrity, integrity);
-          console.log(`Verified ${pkg.name}@${pkg.version} on npm, including exports and archive integrity.`);
+          const tags = JSON.parse(execFileSync('npm', ['dist-tag', 'ls', pkg.name, '--json'], { encoding: 'utf8' }));
+          assert.equal(tags.latest, pkg.version);
+          const message = `Published ${pkg.name}@${pkg.version}; npm latest verified. The published archive passed export, CJS/ESM import, and frontend bundle checks.`;
+          console.log(message);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, message + '\n');
           NODE

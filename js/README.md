@@ -193,24 +193,43 @@ License: ISC.
 ## Releasing (maintainers)
 
 Update `js/package.json`, `js/package-lock.json` and `js/CHANGELOG.md` together,
-then merge the release changes into `main`. Run the **Release Deploy** workflow
-with the committed version:
+then merge into `main`. **Release Deploy** publishes automatically when the npm
+version increases. Changes to dependencies or other manifest fields without a
+version change skip publishing. Invalid versions and version decreases fail.
+
+For recovery after a failed publish, run the workflow with the committed version:
 
 ```sh
 gh workflow run workflow.yaml --ref main -f version=2.8.0
 ```
 
 The workflow tests and builds every entry point, installs and verifies the npm
-archive, then publishes that same archive using `NO_TWOFA_NPM_TOKEN`. It checks
-that npm's `latest` version, exports and archive integrity match the release.
-For the existing `release/X.Y.Z` branch flow, commit version `X.Y.Z` before
-pushing; the workflow no longer bumps versions or merges branches itself.
+archive, then publishes that same archive. It verifies npm's `latest` tag after
+publishing. The existing `release/X.Y.Z` flow is also supported: commit version
+`X.Y.Z` before pushing. The workflow does not bump versions or merge branches.
+
+### One-time npm setup
+
+In the package's npm settings, add a **Trusted Publisher** for GitHub Actions:
+
+- Organization: `smartpricing`
+- Repository: `traceflow-sdk`
+- Workflow filename: `workflow.yaml`
+- Environment: leave empty
+- Allow `npm publish` and `npm dist-tag`
+
+[Trusted publishing](https://docs.npmjs.com/trusted-publishers/) authenticates
+through GitHub OIDC, so no npm write token or periodic token rotation is needed.
+The workflow uses npm 11.21+ so it can verify private package tags through OIDC.
+It does not change package visibility. The old `NO_TWOFA_NPM_TOKEN` secret is no
+longer used.
 
 To verify packaging locally, run from `js/`:
 
 ```sh
 npm ci --ignore-scripts
 npm run typecheck:errors
+npm run test:release
 npm test -- --run
 npm run build
 npm run test:package

@@ -19,7 +19,7 @@ jobs:
       # Only Kafka's types are needed; avoid compiling the optional native addon.
       - run: npm ci --ignore-scripts
         working-directory: js
-      - run: npm run typecheck:errors && npx vitest run && npm run build && npm run test:package
+      - run: npm run typecheck:errors && npm run test:release && npx vitest run && npm run build && npm run test:package
         working-directory: js
   laravel:
     runs-on: ubuntu-24.04

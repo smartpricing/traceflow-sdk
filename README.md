@@ -10,8 +10,8 @@ Clients for [Traceflow](https://github.com/smartpricing/traceflow-service).
 | Java | See module configuration | [java/core/README.md](java/core/README.md) |
 
 Native audit logging is implemented in the Node and Laravel SDKs. Laravel includes
-model capture and a transactional outbox. See each package's README for setup,
-supported transports and tests.
+model capture and delivery through a Queen MQ queue. See each package's README for
+setup, supported transports and tests.
 
 The Laravel package is published from the
 [split repository](https://github.com/smartpricing/traceflow-laravel).

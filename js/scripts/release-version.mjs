@@ -6,6 +6,14 @@ import { fileURLToPath } from "node:url";
 
 const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
+export function readLatestVersion(output) {
+  // npm dist-tag ls emits text even when passed --json.
+  const match = output.match(/^latest:[ \t]+(\S+)[ \t]*$/m);
+  assert(match, "npm did not return a latest tag");
+  assert.match(match[1], stableVersion, "npm latest must be a stable version");
+  return match[1];
+}
+
 export function shouldRelease({ event, branch, requested, version, previous }) {
   assert.match(version, stableVersion, "Releases must use a stable X.Y.Z version");
   if (event === "workflow_dispatch") {

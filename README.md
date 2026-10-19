@@ -4,7 +4,7 @@ Clients for [Traceflow](https://github.com/smartpricing/traceflow-service).
 
 | SDK | Package | Documentation |
 | --- | --- | --- |
-| JavaScript / TypeScript | `@dev.smartpricing/traceflow-sdk` | [js/README.md](js/README.md) |
+| JavaScript / TypeScript | `@dev.smartpricing/traceflow-sdk` | [Setup](js/README.md), [audit log](js/README.md#audit-log), [frontend errors](js/README.md#frontend-errors) |
 | PHP / Laravel | `smartness/traceflow-laravel` | [php/laravel/README.md](php/laravel/README.md) |
 | Go | `github.com/smartpricing/traceflow-sdk/go` | [go/README.md](go/README.md) |
 | Java | See module configuration | [java/core/README.md](java/core/README.md) |

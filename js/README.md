@@ -210,8 +210,10 @@ publishing. The existing `release/X.Y.Z` flow is also supported: commit version
 
 ### npm authentication
 
-The workflow accepts the repository secret `NO_TWOFA_NPM_TOKEN` for npm access.
-Use a valid token with read/write permission for this package and permission to
+The workflow uses `NPM_TOKEN` (organization or repository secret), falling back
+to the legacy repository secret `NO_TWOFA_NPM_TOKEN`. Organization secrets must
+allow access to this public repository; the "private repositories" policy does
+not include it. Use a valid token with read/write permission for this package and permission to
 publish non-interactively. Update the secret when the token expires or is revoked.
 
 To remove the need to renew a publishing token, configure trusted publishing:
@@ -228,7 +230,7 @@ In the package's npm settings, add a **Trusted Publisher** for GitHub Actions:
 through GitHub OIDC, so no npm write token or periodic token rotation is needed.
 The workflow uses npm 11.21+ so it can verify private package tags through OIDC.
 It does not change package visibility. npm prefers OIDC when configured and can
-fall back to `NO_TWOFA_NPM_TOKEN` while trusted publishing is being set up.
+fall back to the available npm token while trusted publishing is being set up.
 
 To verify packaging locally, run from `js/`:
 

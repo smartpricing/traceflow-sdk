@@ -44,20 +44,13 @@ await sdk.shutdown();
 `trace.fail(error)` and `step.fail(error)` record failures. Explicit trace and
 step IDs must be UUIDs; omit them to generate IDs.
 
-For asynchronous request context, `runWithTrace(options, fn)` makes the trace
-available through `sdk.getCurrentTrace()` and `sdk.startStep()`. It finishes the
-trace when the callback returns, or fails it and rethrows when the callback throws.
+`runWithTrace(options, fn)` provides request context, finishes on return and fails
+on throw. `sdk.getTrace(traceId)` continues a trace; with `silentErrors: true`, a
+returned handle does not prove the remote trace exists.
 
-For another service to continue a trace, pass its ID in a request header and use
-`sdk.getTrace(traceId)`. HTTP reads live state from the backend; with
-`silentErrors: true`, a failed read can still return a local handle, so a handle
-alone is not evidence that the trace exists. `sdk.heartbeat(traceId)` refreshes
-activity for long-running work.
-
-HTTP middleware is available as
-[`createExpressMiddleware`](src/middleware/express.ts) and
-[`traceflowFastifyPlugin`](src/middleware/fastify.ts). Both accept `ignorePaths`.
-Full method and option types are in [src/types.ts](src/types.ts).
+HTTP middleware: [`createExpressMiddleware`](src/middleware/express.ts) and
+[`traceflowFastifyPlugin`](src/middleware/fastify.ts). See [types](src/types.ts)
+for their options and the full tracing API.
 
 ## Audit Log
 
@@ -85,56 +78,38 @@ const event = audit.createEvent({
 const receipt = await audit.record(event);
 ```
 
-Search in the dashboard by source, entity type and ID. `actor` identifies who
-performed the action; `origin.channel` records `webapp`, `mobile` or another
-channel. Set them from the authenticated request and known application context.
+Search by source, entity type and ID. Set `actor` and `origin.channel` from the
+authenticated request and known application context.
 
 | Action | Changes |
 | --- | --- |
 | `created` | `auditDiff({}, createdValues)` |
 | `updated` | `auditDiff(previousValues, currentValues)` |
 | `deleted` | `auditDiff(deletedValues, {})` |
-| `exported` or another custom action | Omit `changes` if no values changed |
+| Custom action, e.g. `exported` | Omit `changes` if no values changed |
 
-To store complete selected values instead of a diff, use
-`changes: { mode: 'snapshot', before: previousValues, after: currentValues }`.
+`auditDiff()` distinguishes absent fields from `null`; nested objects and arrays
+are compared as whole fields. Skip empty updates. For complete selected values,
+use `changes: { mode: 'snapshot', before, after }`.
 
-This example sends directly. For recovery after a process crash, store `event`
-in your application's outbox in the same transaction as the business change.
-The publisher must reuse that envelope on every attempt and remove it only after
-`record()` succeeds. This package does not provide a Node database outbox.
+For crash recovery, save `event` in your database outbox in the same transaction
+as the business change. Retry `audit.record(event)` with that saved envelope and
+remove it only after success. The Node SDK does not provide a database outbox.
+`recordAudit(input)` creates a new envelope each time; do not use it for retries.
+Existing SDK instances expose `sdk.audit` and `sdk.recordAudit()`.
 
-`recordAudit(input)` creates and sends an envelope in one call. An existing
-`TraceFlowSDK` exposes the same methods through `sdk.audit` and `sdk.recordAudit()`.
-Do not call `recordAudit()` again to retry an operation: that generates a new ID
-unless one was supplied.
+Delivery failures throw `AuditDeliveryError` with `eventId`, `retryable` and
+`statusCode`, regardless of tracing `silentErrors`. Network errors, `408`, `429`
+and `5xx` are retried; `409` payload conflicts are not.
 
-`AuditDeliveryError` exposes `eventId`, `retryable` and `statusCode`. Network
-failures, `408`, `429` and `5xx` are retried with the same payload. A `409` payload
-conflict is not retried. Audit delivery failures are thrown regardless of tracing
-`silentErrors`; `enabled: false` also throws a retryable delivery error.
-
-Subject types and IDs are strings. `auditDiff()` distinguishes absent keys from
-`null` and compares nested objects/arrays as whole fields. Skip updates whose
-diff is empty. Creation uses `{}` before; deletion uses `{}` after. Custom
-activities such as `exported` can omit changes.
-
-Select fields and redact metadata before creating the event. Serialize dates
-explicitly; use strings for exact decimals and large integers. The payload limit
-is 256 KiB with a maximum JSON depth of 32. See [audit types](src/audit.ts) for
-optional context fields and [the backend contract](https://github.com/smartpricing/traceflow-service#audit-log)
-for retention, responses and queries.
+Select and redact fields before sending. Serialize dates, exact decimals and
+large integers as strings. Payloads must fit 256 KiB and JSON depth 32. See
+[audit types](src/audit.ts) and the [backend contract](https://github.com/smartpricing/traceflow-service#audit-log).
 
 ## Error Monitoring
 
-Traceflow Error Monitoring captures errors from your web and mobile apps, groups
-occurrences and reconstructs stacks with source maps. Install one adapter at startup;
-use `captureException()` for handled errors. See the [integration guide](ERROR_MONITORING.md)
-for backend configuration, SDK options and troubleshooting.
-
-### Browser
-
-Use this in browser JavaScript, including assets served by Laravel:
+Capture application errors, context and breadcrumbs; inspect grouped occurrences
+and readable stacks in Traceflow. Install once in browser startup code:
 
 ```ts
 import { installBrowserErrors } from '@dev.smartpricing/traceflow-sdk/browser';
@@ -158,88 +133,14 @@ export function reportQuoteSaveFailure(error: unknown, quoteId: string) {
 }
 ```
 
-Captures global JS errors and unhandled promise rejections. Requires `window`;
-PHP errors are not captured.
+Global JS errors and unhandled promise rejections are captured automatically.
+Use `captureException()` for handled errors. The queue is in memory, so closing
+a tab or terminating an app can lose pending events.
 
-### Nuxt
-
-Create `plugins/traceflow.client.ts` (under `app/` if that is your Nuxt source
-directory). This adapter includes browser capture and Nuxt/Vue error hooks:
-
-```ts
-import { installNuxtErrors } from '@dev.smartpricing/traceflow-sdk/nuxt';
-
-export default defineNuxtPlugin((nuxtApp) => {
-  const reporting = installNuxtErrors(nuxtApp, {
-    endpoint: 'https://traceflow.example.com/api/v1/client-errors',
-    ingestKey: 'public-webapp-ingestion-key',
-    source: 'webapp',
-    environment: 'production',
-    release: '1.0.0',
-    dist: 'build-commit-or-ota-id',
-  });
-  if (import.meta.hot) import.meta.hot.dispose(() => reporting.dispose());
-  return { provide: { errorReporting: reporting.client } };
-});
-```
-
-In a component or composable, access the client with
-`const { $errorReporting } = useNuxtApp()` and call
-`$errorReporting.captureException(error)`. Nuxt SSR errors are outside this adapter.
-
-### React Native
-
-Install before rendering the app:
-
-```ts
-import { AppState, Platform } from 'react-native';
-import { installReactNativeErrors } from '@dev.smartpricing/traceflow-sdk/react-native';
-
-export const reporting = installReactNativeErrors({
-  endpoint: 'https://traceflow.example.com/api/v1/client-errors',
-  ingestKey: 'public-mobile-ingestion-key',
-  source: 'mobile',
-  environment: 'production',
-  release: '1.0.0',
-  dist: 'android-build-42',
-  context: { os: Platform.OS },
-}, { appState: AppState, requireCoverage: ['globalErrors'] });
-
-// Update from your navigation listener.
-reporting.client.setContext({ screen: 'quote-editor' });
-```
-
-`requireCoverage` throws if the global JS error hook is unavailable. Unhandled
-promise rejections need a runtime-specific hook: see [React Native setup](ERROR_MONITORING.md#react-native).
-Use a different `dist` for each Android/iOS build and OTA update. Native crashes
-are not captured.
-
-For React render/lifecycle errors, wrap the app in `TraceflowErrorBoundary` from
-`@dev.smartpricing/traceflow-sdk/react`, passing `client={reporting.client}`,
-`fallback` and children (React 18+).
-
-### Readable stacks
-
-Generate source maps and upload them from CI with a private API key. For Nuxt,
-set `sourcemap: { client: 'hidden' }` in `nuxt.config.ts`. For example:
-
-```sh
-# TRACEFLOW_API_KEY is a private secret in the build environment.
-npx traceflow-upload-map \
-  --url https://traceflow.example.com \
-  --source webapp --environment production \
-  --release 1.0.0 --dist build-commit-or-ota-id --platform browser \
-  --filename /_nuxt/app.js --map .output/public/_nuxt/app.js.map
-```
-
-Upload each chunk's map using its actual generated path. Source, environment,
-release, dist and platform must match the event. Keep `.map` files out of public
-hosting. For mobile, upload the matching composed Metro/Hermes map; see
-[source-map uploads](ERROR_MONITORING.md#upload-source-maps).
-
-The error queue is in memory: closing a tab or terminating an app can lose events.
-See [context and delivery](ERROR_MONITORING.md#context-and-delivery) for redaction with
-`beforeSend`, logout cleanup, `flush()`, diagnostics and retry behavior.
+See the Error Monitoring guide for [Nuxt](ERROR_MONITORING.md#nuxt),
+[React Native](ERROR_MONITORING.md#react-native),
+[source maps](ERROR_MONITORING.md#upload-source-maps) and
+[troubleshooting](ERROR_MONITORING.md#troubleshooting).
 
 ## Configuration and delivery
 
